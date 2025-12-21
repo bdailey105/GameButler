@@ -30,4 +30,9 @@ export const uploadLibrary = async (file) => {
   return response.data;
 };
 
+export const autoTagLibrary = async () => {
+  const response = await api.post('/games/auto-tag');
+  return response.data;
+};
+
 export default api;

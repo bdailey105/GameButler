@@ -136,6 +136,28 @@ input[type="text"], select, input[type="file"], .search-input {
   background-color: #535bf2;
 }
 
+.secondary-btn {
+  background-color: #3a3a3a;
+  color: #ccc;
+  border: 1px solid #444;
+  padding: 0.6rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.secondary-btn:hover {
+  background-color: #444;
+  color: white;
+  border-color: #646cff;
+}
+
+.secondary-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Recommendation Result */
 .result-card {
   background: linear-gradient(135deg, #646cff 0%, #9089fc 100%);

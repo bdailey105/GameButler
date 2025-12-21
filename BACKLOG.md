@@ -43,4 +43,4 @@
 - [x] **Story 7.2: Backend API for Library Management**
 - [x] **Story 7.3: Frontend Library & Kanban View**
 - [x] **Story 7.4: Attention Level Categorization UI**
-- [ ] **Story 7.5: Basic Auto-Tagging (Heuristic)**
+- [x] **Story 7.5: Basic Auto-Tagging (Heuristic)**

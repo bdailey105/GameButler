@@ -13,6 +13,7 @@ from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate
+from src.logic import apply_attention_heuristics
 
 # Global recommender instance
 recommender = None
@@ -65,6 +66,8 @@ async def lifespan(app: FastAPI):
                             status=GameStatus.LIBRARY,
                             attention_level=AttentionLevel.UNSET
                         )
+                        # Apply heuristics on initial load
+                        apply_attention_heuristics(game)
                         session.add(game)
                     session.commit()
                     print(f"Loaded {len(df)} games from {sample_path} into DB.")
@@ -80,7 +83,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="GameButler API",
     description="API for recommending Steam games.",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan
 )
 
@@ -117,9 +120,6 @@ async def list_games(
     search: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
-    """
-    List games with optional filtering.
-    """
     query = select(Game)
     if status:
         query = query.where(Game.status == status)
@@ -137,9 +137,6 @@ async def update_game(
     game_update: GameUpdate, 
     session: Session = Depends(get_session)
 ):
-    """
-    Update a game's status or attention level.
-    """
     game = session.get(Game, app_id)
     if not game:
         raise HTTPException(status_code=404, detail="Game not found")
@@ -151,19 +148,32 @@ async def update_game(
     session.add(game)
     session.commit()
     session.refresh(game)
-    
-    # Sync Recommender (Optimizable later to not reload everything)
     sync_recommender_with_db()
-    
     return game
+
+@app.post("/games/auto-tag")
+async def auto_tag_games(session: Session = Depends(get_session)):
+    """
+    Apply heuristics to all games with unset attention level.
+    """
+    statement = select(Game).where(Game.attention_level == AttentionLevel.UNSET)
+    games = session.exec(statement).all()
+    
+    count = 0
+    for game in games:
+        original_level = game.attention_level
+        apply_attention_heuristics(game)
+        if game.attention_level != original_level:
+            session.add(game)
+            count += 1
+            
+    session.commit()
+    sync_recommender_with_db()
+    return {"message": f"Successfully auto-tagged {count} games."}
 
 @app.post("/upload")
 async def upload_library(file: UploadFile = File(...), session: Session = Depends(get_session)):
-    """
-    Upload a new Steam library CSV file and save to the database.
-    """
     temp_file_path = f"temp_{file.filename}"
-    
     try:
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -178,6 +188,8 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
                 existing_game.playtime_forever = int(row['Playtime_Forever'])
                 existing_game.genre = str(row.get('Genre', 'Unknown'))
                 existing_game.tags = str(row.get('Tags', 'Unknown'))
+                # Only apply heuristics if not already set manually
+                apply_attention_heuristics(existing_game)
                 session.add(existing_game)
             else:
                 game = Game(
@@ -189,14 +201,13 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
                     status=GameStatus.LIBRARY,
                     attention_level=AttentionLevel.UNSET
                 )
+                apply_attention_heuristics(game)
                 session.add(game)
         
         session.commit()
         sync_recommender_with_db()
         os.remove(temp_file_path)
-        
         return {"message": f"Successfully loaded library from {file.filename}", "games_count": len(recommender.df)}
-        
     except Exception as e:
         if os.path.exists(temp_file_path):
             os.remove(temp_file_path)
@@ -210,9 +221,6 @@ async def recommend_game(
     length: Optional[str] = Query(None, pattern="^(short|medium|long)$"),
     attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$")
 ):
-    """
-    Get a game recommendation based on filters.
-    """
     if recommender is None or recommender.df.empty:
         raise HTTPException(status_code=404, detail="No game library loaded. Please upload a CSV file.")
 

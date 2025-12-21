@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchGames, updateGame, getRecommendation, uploadLibrary } from './api'
+import { fetchGames, updateGame, getRecommendation, uploadLibrary, autoTagLibrary } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions }) {
@@ -178,6 +178,7 @@ function LibraryView({ onMove, onAttentionChange }) {
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [loading, setLoading] = useState(false)
+  const [autoTagMsg, setAutoTagMsg] = useState('')
 
   useEffect(() => {
     loadLibrary()
@@ -191,6 +192,20 @@ function LibraryView({ onMove, onAttentionChange }) {
       if (search) params.search = search
       const data = await fetchGames(params)
       setGames(data)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAutoTag = async () => {
+    setLoading(true)
+    try {
+      const res = await autoTagLibrary() 
+      setAutoTagMsg(res.message)
+      loadLibrary()
+      setTimeout(() => setAutoTagMsg(''), 3000)
     } catch (err) {
       console.error(err)
     } finally {
@@ -230,7 +245,11 @@ function LibraryView({ onMove, onAttentionChange }) {
             <option value="casual">☕ Casual</option>
             <option value="focused">🎯 Focused</option>
           </select>
+          <button className="secondary-btn" onClick={handleAutoTag} disabled={loading} title="Auto-tag uncategorized games">
+            🪄 Auto-Tag
+          </button>
         </div>
+        {autoTagMsg && <p className="success-msg">{autoTagMsg}</p>}
       </section>
       <div className="library-grid">
         {games.map(game => (
