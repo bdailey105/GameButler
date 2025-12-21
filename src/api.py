@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -6,6 +6,7 @@ import uvicorn
 import os
 import shutil
 import pandas as pd
+import asyncio
 from typing import Optional, List
 from sqlmodel import Session, select, col
 
@@ -14,6 +15,7 @@ from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate
 from src.logic import apply_attention_heuristics
+from src.steam_client import fetch_game_details
 
 # Global recommender instance
 recommender = None
@@ -66,7 +68,6 @@ async def lifespan(app: FastAPI):
                             status=GameStatus.LIBRARY,
                             attention_level=AttentionLevel.UNSET
                         )
-                        # Apply heuristics on initial load
                         apply_attention_heuristics(game)
                         session.add(game)
                     session.commit()
@@ -83,7 +84,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="GameButler API",
     description="API for recommending Steam games.",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan
 )
 
@@ -153,9 +154,6 @@ async def update_game(
 
 @app.post("/games/auto-tag")
 async def auto_tag_games(session: Session = Depends(get_session)):
-    """
-    Apply heuristics to all games with unset attention level.
-    """
     statement = select(Game).where(Game.attention_level == AttentionLevel.UNSET)
     games = session.exec(statement).all()
     
@@ -170,6 +168,55 @@ async def auto_tag_games(session: Session = Depends(get_session)):
     session.commit()
     sync_recommender_with_db()
     return {"message": f"Successfully auto-tagged {count} games."}
+
+async def process_enrichment(limit: int):
+    """Background task to enrich games."""
+    print(f"Starting enrichment task for {limit} games...")
+    with Session(engine) as session:
+        # Find games with Unknown genre or tags
+        # Using a simple check for "Unknown" string, which is our default
+        statement = select(Game).where(
+            (Game.genre == "Unknown") | (Game.tags == "Unknown")
+        ).limit(limit)
+        
+        games_to_enrich = session.exec(statement).all()
+        print(f"Found {len(games_to_enrich)} games to enrich.")
+        
+        processed = 0
+        for game in games_to_enrich:
+            try:
+                print(f"Fetching details for {game.name} ({game.id})...")
+                details = await fetch_game_details(game.id)
+                
+                if details:
+                    game.genre = ";".join(details.get("genres", []))
+                    game.tags = ";".join(details.get("categories", []))
+                    # If we had image/desc columns, we'd set them here
+                    
+                    session.add(game)
+                    session.commit()
+                    processed += 1
+                
+                # Respect rate limits
+                await asyncio.sleep(1.5) 
+                
+            except Exception as e:
+                print(f"Error enriching {game.id}: {e}")
+                
+        print(f"Enrichment complete. Processed {processed} games.")
+        if processed > 0:
+            sync_recommender_with_db()
+
+@app.post("/games/enrich")
+async def enrich_games(
+    background_tasks: BackgroundTasks,
+    limit: int = 50
+):
+    """
+    Trigger a background job to fetch metadata from Steam for games with missing info.
+    """
+    background_tasks.add_task(process_enrichment, limit)
+    return {"message": f"Enrichment started for up to {limit} games. This may take a while."}
 
 @app.post("/upload")
 async def upload_library(file: UploadFile = File(...), session: Session = Depends(get_session)):
@@ -186,9 +233,17 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
             if existing_game:
                 existing_game.name = str(row['Name'])
                 existing_game.playtime_forever = int(row['Playtime_Forever'])
-                existing_game.genre = str(row.get('Genre', 'Unknown'))
-                existing_game.tags = str(row.get('Tags', 'Unknown'))
-                # Only apply heuristics if not already set manually
+                # Only overwrite if we don't have valid data yet?
+                # Actually, the user's CSV is the source of truth for playtime, but might be bad for tags.
+                # If CSV has "Unknown" genre, keep existing DB genre if it's better.
+                csv_genre = str(row.get('Genre', 'Unknown'))
+                if csv_genre != 'Unknown' or existing_game.genre == 'Unknown':
+                    existing_game.genre = csv_genre
+                    
+                csv_tags = str(row.get('Tags', 'Unknown'))
+                if csv_tags != 'Unknown' or existing_game.tags == 'Unknown':
+                    existing_game.tags = csv_tags
+                
                 apply_attention_heuristics(existing_game)
                 session.add(existing_game)
             else:

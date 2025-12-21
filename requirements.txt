@@ -5,3 +5,4 @@ uvicorn
 python-multipart
 sqlmodel
 httpx
+pytest-asyncio

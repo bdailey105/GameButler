@@ -35,4 +35,9 @@ export const autoTagLibrary = async () => {
   return response.data;
 };
 
+export const enrichLibrary = async () => {
+  const response = await api.post('/games/enrich');
+  return response.data;
+};
+
 export default api;

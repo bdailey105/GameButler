@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { fetchGames, updateGame, getRecommendation, uploadLibrary, autoTagLibrary } from './api'
+import { fetchGames, updateGame, getRecommendation, uploadLibrary, autoTagLibrary, enrichLibrary } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions }) {
@@ -213,6 +213,20 @@ function LibraryView({ onMove, onAttentionChange }) {
     }
   }
 
+  const handleEnrich = async () => {
+    setLoading(true)
+    try {
+      const res = await enrichLibrary()
+      setAutoTagMsg(res.message) // Reusing msg state for simplicity
+      setTimeout(() => setAutoTagMsg(''), 5000)
+    } catch (err) {
+      console.error(err)
+      setAutoTagMsg('Enrichment failed to start.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSearch = async (e) => {
     const val = e.target.value
     setSearch(val)
@@ -247,6 +261,9 @@ function LibraryView({ onMove, onAttentionChange }) {
           </select>
           <button className="secondary-btn" onClick={handleAutoTag} disabled={loading} title="Auto-tag uncategorized games">
             🪄 Auto-Tag
+          </button>
+          <button className="secondary-btn" onClick={handleEnrich} disabled={loading} title="Fetch metadata from Steam">
+            ☁️ Enrich
           </button>
         </div>
         {autoTagMsg && <p className="success-msg">{autoTagMsg}</p>}

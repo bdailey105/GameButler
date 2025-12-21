@@ -44,3 +44,9 @@
 - [x] **Story 7.3: Frontend Library & Kanban View**
 - [x] **Story 7.4: Attention Level Categorization UI**
 - [x] **Story 7.5: Basic Auto-Tagging (Heuristic)**
+
+## Epic 8: Metadata Enrichment
+**Goal:** Automatically populate Genres, Tags, and Art from Steam.
+- [ ] **Story 8.1: Steam Metadata Service**
+- [ ] **Story 8.2: Batch Enrichment Endpoint**
+- [ ] **Story 8.3: Enrichment UI & Progress**
