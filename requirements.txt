@@ -3,3 +3,5 @@ pytest
 fastapi
 uvicorn
 python-multipart
+sqlmodel
+httpx

@@ -13,6 +13,7 @@ data/*.csv
 !data/test_upload.csv
 !data/real_library_sample.csv
 temp_*.csv
+*.db
 
 # Frontend
 frontend/node_modules/

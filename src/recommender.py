@@ -1,5 +1,6 @@
 import pandas as pd
 from typing import Optional
+from src.models import GameStatus, AttentionLevel
 
 class GameRecommender:
     def __init__(self, df: pd.DataFrame):
@@ -10,7 +11,8 @@ class GameRecommender:
                   tag: Optional[str] = None, 
                   unplayed_only: bool = False,
                   min_length: Optional[int] = None,
-                  max_length: Optional[int] = None
+                  max_length: Optional[int] = None,
+                  attention_level: Optional[str] = None
                   ) -> Optional[pd.Series]:
         """
         Returns a random game matching the criteria.
@@ -21,12 +23,18 @@ class GameRecommender:
             unplayed_only: If True, only considers games with 0 playtime.
             min_length: Minimum Average_Playtime (minutes).
             max_length: Maximum Average_Playtime (minutes).
+            attention_level: Filter by specific attention level (casual, focused).
         """
         if self.df.empty:
             return None
             
         filtered_df = self.df.copy()
         
+        # Default Filter: Exclude Completed and Abandoned unless specific logic overrides (not implemented yet)
+        # Assuming we want to play things we haven't finished or abandoned.
+        if 'status' in filtered_df.columns:
+            filtered_df = filtered_df[~filtered_df['status'].isin([GameStatus.COMPLETED, GameStatus.ABANDONED])]
+
         # Filter by playtime
         if unplayed_only:
             filtered_df = filtered_df[filtered_df['Playtime_Forever'] == 0]
@@ -40,12 +48,15 @@ class GameRecommender:
             filtered_df = filtered_df[filtered_df['Tags'].astype(str).str.contains(tag, case=False, na=False)]
 
         # Filter by length (Time to Beat)
-        # Ensure the column exists before filtering
         if 'Average_Playtime' in filtered_df.columns:
             if min_length is not None:
                 filtered_df = filtered_df[filtered_df['Average_Playtime'] >= min_length]
             if max_length is not None:
                 filtered_df = filtered_df[filtered_df['Average_Playtime'] <= max_length]
+
+        # Filter by Attention Level
+        if attention_level and 'attention_level' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['attention_level'] == attention_level]
             
         if filtered_df.empty:
             return None

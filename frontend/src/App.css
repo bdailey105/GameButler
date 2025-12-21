@@ -1,26 +1,78 @@
 #root {
-  max-width: 1280px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 0;
   text-align: center;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  color: #e0e0e0;
+  background-color: #1a1a1a;
+  min-height: 100vh;
 }
 
-.container {
-  max-width: 600px;
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Navbar */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: #252525;
+  border-bottom: 1px solid #333;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.nav-links {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-links button {
+  background: none;
+  border: none;
+  color: #aaa;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 1rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.nav-links button:hover {
+  background: #333;
+  color: white;
+}
+
+.nav-links button.active {
+  background: #646cff;
+  color: white;
+}
+
+/* Content Area */
+.content {
+  padding: 2rem;
+  max-width: 1000px;
   margin: 0 auto;
-}
-
-.header {
-  margin-bottom: 2rem;
+  width: 100%;
 }
 
 .card {
   background: #2a2a2a;
-  padding: 2rem;
+  padding: 1.5rem;
   border-radius: 12px;
   margin-bottom: 1.5rem;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
   text-align: left;
 }
 
@@ -29,6 +81,13 @@ h2 {
   border-bottom: 1px solid #444;
   padding-bottom: 0.5rem;
   margin-bottom: 1rem;
+}
+
+/* Forms */
+.filter-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
 }
 
 .filter-group {
@@ -40,6 +99,8 @@ h2 {
 .filter-group label {
   margin-bottom: 0.5rem;
   font-weight: bold;
+  font-size: 0.9rem;
+  color: #999;
 }
 
 .filter-group.checkbox {
@@ -48,13 +109,15 @@ h2 {
   gap: 0.5rem;
 }
 
-input[type="text"], select, input[type="file"] {
-  padding: 0.5rem;
-  border-radius: 4px;
-  border: 1px solid #555;
-  background: #333;
+input[type="text"], select, input[type="file"], .search-input {
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #444;
+  background: #1a1a1a;
   color: white;
   font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .primary-btn {
@@ -66,62 +129,187 @@ input[type="text"], select, input[type="file"] {
   border-radius: 8px;
   font-size: 1.1rem;
   cursor: pointer;
-  transition: background-color 0.25s;
-  margin-top: 1rem;
+  transition: background-color 0.2s;
 }
 
 .primary-btn:hover {
   background-color: #535bf2;
 }
 
-.primary-btn:disabled {
-  background-color: #444;
-  cursor: not-allowed;
-}
-
+/* Recommendation Result */
 .result-card {
   background: linear-gradient(135deg, #646cff 0%, #9089fc 100%);
   color: white;
   padding: 2rem;
   border-radius: 12px;
   margin-top: 2rem;
-  animation: fadeIn 0.5s ease-out;
+  text-align: center;
 }
 
 .game-title {
   font-size: 2rem;
   font-weight: bold;
-  margin: 1rem 0;
-}
-
-.game-details {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-  margin-bottom: 1rem;
 }
 
 .badge {
   background: rgba(0,0,0,0.3);
   padding: 0.25rem 0.75rem;
   border-radius: 100px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
-.error-card {
-  background: #ff4d4f;
-  color: white;
-  padding: 1rem;
-  border-radius: 8px;
+/* Dashboard & Library Layouts */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.game-list, .library-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
   margin-top: 1rem;
 }
 
-.success-msg {
-  color: #4caf50;
-  margin-top: 0.5rem;
+.library-controls {
+  display: flex;
+  gap: 1rem;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+.att-filter {
+  width: 200px !important;
+}
+
+/* Game Card */
+.game-card {
+  background: #333;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #444;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.game-card:hover {
+  transform: translateY(-2px);
+  border-color: #646cff;
+}
+
+.game-card.attention-casual { border-left: 4px solid #4caf50; }
+.game-card.attention-focused { border-left: 4px solid #ff9800; }
+
+.game-card-content {
+  padding: 1rem;
+}
+
+.game-name {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.game-meta {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.8rem;
+}
+
+.attention-toggle {
+  margin-bottom: 1rem;
+}
+
+.attention-toggle label {
+  font-size: 0.8rem;
+  color: #888;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.attention-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.att-btn {
+  background: #222;
+  border: 1px solid #444;
+  color: #888;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s;
+}
+
+.att-btn:hover {
+  background: #444;
+  color: white;
+}
+
+.att-btn.active {
+  color: white;
+}
+
+.att-btn.btn-casual.active { background: #4caf50; border-color: #4caf50; }
+.att-btn.btn-focused.active { background: #ff9800; border-color: #ff9800; }
+.att-btn.btn-unset.active { background: #666; border-color: #666; }
+
+.game-stats p {
+  margin: 0.2rem 0;
+  font-size: 0.9rem;
+  color: #bbb;
+}
+
+.game-card-actions {
+  display: flex;
+  border-top: 1px solid #444;
+}
+
+.action-btn {
+  flex: 1;
+  padding: 0.6rem;
+  border: none;
+  background: #3a3a3a;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: #444;
+  color: white;
+}
+
+.action-btn.primary { color: #646cff; }
+.action-btn.primary:hover { background: #646cff; color: white; }
+.action-btn.success { color: #4caf50; }
+.action-btn.success:hover { background: #4caf50; color: white; }
+.action-btn.warning { color: #ff9800; }
+.action-btn.warning:hover { background: #ff9800; color: white; }
+
+.empty-msg {
+  color: #666;
+  font-style: italic;
+  padding: 2rem;
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
 }

@@ -36,3 +36,11 @@
   - Handle missing Genre/Tags (fetch or mock? For now, mock/default).
 - [x] **Story 6.2: Loader Update**
   - Update `load_steam_library` to auto-detect columns and normalize.
+
+## Epic 7: Backlog Management & Attention Tracking
+**Goal:** Track status (Playing, Next) and categorize by Attention Level (Casual vs Focused).
+- [x] **Story 7.1: Persistence Layer Setup (SQLite)**
+- [x] **Story 7.2: Backend API for Library Management**
+- [x] **Story 7.3: Frontend Library & Kanban View**
+- [x] **Story 7.4: Attention Level Categorization UI**
+- [ ] **Story 7.5: Basic Auto-Tagging (Heuristic)**
