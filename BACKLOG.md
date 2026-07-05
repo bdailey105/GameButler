@@ -26,7 +26,7 @@
 ## Epic 5: Deployment
 **Goal:** Deploy to a live environment.
 - [x] **Story 5.1: Dockerization**
-- [ ] **Story 5.2: Cloud Deployment**
+- [x] **Story 5.2: ~~Cloud Deployment~~ (superseded by Epic 9: Home Network Deployment)**
 
 ## Epic 6: Real Data Ingestion
 **Goal:** Support the user's actual Steam library export format.
@@ -47,6 +47,18 @@
 
 ## Epic 8: Metadata Enrichment
 **Goal:** Automatically populate Genres, Tags, and Art from Steam.
-- [ ] **Story 8.1: Steam Metadata Service**
-- [ ] **Story 8.2: Batch Enrichment Endpoint**
-- [ ] **Story 8.3: Enrichment UI & Progress**
+- [x] **Story 8.1: Steam Metadata Service**
+- [x] **Story 8.2: Batch Enrichment Endpoint**
+- [x] **Story 8.3: Enrichment UI & Progress**
+
+## Epic 9: Home Network Deployment
+**Goal:** Run GameButler on an always-on home LAN host via Docker.
+- [x] **Story 9.1: DB Persistence Fix** — SQLite file moved to `data/` so the Docker volume actually persists it across rebuilds.
+- [x] **Story 9.2: LAN Deployment Guide** — Rewrote DEPLOY.md for home-network deployment (was VPS-focused).
+- [x] **Story 9.3: Backlog Cleanup** — Marked shipped stories done, retired cloud deployment story.
+
+## Epic 10: Loose Ends
+**Goal:** Finish partially-implemented features.
+- [ ] **Story 10.1: Recommender Exclusion Filter** — Implement the "exclude Completed/Abandoned" default filter (recommender.py has a not-implemented comment).
+- [ ] **Story 10.2: Enrichment Progress UI** — Show progress/status for the background enrichment job (currently just a fire-and-forget button).
+- [ ] **Story 10.3: Store Game Art & Descriptions** — Persist images/descriptions fetched from Steam (stub comment in api.py).
