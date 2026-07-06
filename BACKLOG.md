@@ -60,8 +60,8 @@
 ## Epic 10: Loose Ends
 **Goal:** Finish partially-implemented features.
 - [x] **Story 10.1: Recommender Exclusion Filter** — Completed/Abandoned games are excluded from recommendations by default and covered by a regression test.
-- [ ] **Story 10.2: Enrichment Progress UI** — Show progress/status for the background enrichment job (currently just a fire-and-forget button).
-- [ ] **Story 10.3: Store Game Art & Descriptions** — Persist images/descriptions fetched from Steam (stub comment in api.py).
+- [x] **Story 10.2: Enrichment Progress UI** — Frontend polls job status every 1.5s and shows progress.
+- [x] **Story 10.3: Store Game Art & Descriptions** — header_image and short_description persisted and shown on game cards.
 
 ## Epic 11: Local Deployment Hardening
 **Goal:** Make local and home-LAN deployment the supported production path.

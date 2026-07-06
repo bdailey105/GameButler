@@ -80,5 +80,5 @@ An interactive tool that:
 | **Real Data Support** | **Done** | CSV parsing and normalization active. |
 | **Local/LAN Deployment** | **Done** | Docker Compose serves the app locally on port 8095 and proxies API calls through Nginx. |
 | **Backlog Management** | **Done** | Tracks Library, Up Next, Playing, Completed, Abandoned, and Attention Level. |
-| **Metadata Enrichment Progress** | **Pending** | Enrichment starts in the background but does not expose job progress yet. |
-| **Game Art & Descriptions** | **Pending** | Steam client fetches these fields, but the database does not persist them yet. |
+| **Metadata Enrichment Progress** | **Done** | Job status endpoints + frontend polling with progress display. |
+| **Game Art & Descriptions** | **Done** | header_image and short_description persisted in SQLite and rendered on game cards. |
