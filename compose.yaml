@@ -1,1 +1,22 @@
-docker-compose.yml
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8001:8000" # Changed host port to 8001 to avoid conflict
+    volumes:
+      - ./data:/app/data # Persist data
+    restart: always
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        - VITE_API_URL=/api
+    ports:
+      - "8095:80" # Host port 8095 (behind Nginx proxy)
+    depends_on:
+      - backend
+    restart: always
