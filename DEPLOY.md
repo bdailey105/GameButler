@@ -1,8 +1,27 @@
-# Deployment Guide (Home Network)
+# Deployment Guide (Local/Home Network)
 
 ## Prerequisites
 
-- Always-on host on your LAN with Docker + Docker Compose installed. Git installed.
+- Local machine or always-on LAN host.
+- Git.
+- Docker with Docker Compose.
+- Python 3 and Node.js/npm for local verification commands.
+
+## Local Setup
+
+Install backend and frontend dependencies:
+
+```bash
+make setup
+```
+
+Run the local verification suite before deploying:
+
+```bash
+make verify
+```
+
+This runs backend tests, frontend lint, frontend production build, and Docker Compose config validation.
 
 ## Deploy
 
@@ -14,29 +33,71 @@
 
 2. Start the containers:
    ```bash
-   docker compose up -d --build
+   make up
    ```
 
 3. Access at `http://<host-ip>:8095` from any device on the LAN.
 
 **Note:** Nginx inside the frontend container proxies `/api` to the backend, so port 8095 is the only port you need to expose.
 
+## Health Check
+
+After the containers start, verify the local deployment:
+
+```bash
+make health
+```
+
+The health check verifies:
+
+- Docker Compose has `backend` and `frontend` services running.
+- The frontend responds at `http://localhost:8095`.
+- The API responds through the frontend proxy at `http://localhost:8095/api/health`.
+- The SQLite database file exists at `data/gamebutler.db`.
+
+Override defaults when checking a remote LAN host:
+
+```bash
+FRONTEND_URL=http://<host-ip>:8095 make health
+```
+
 ## Updating
 
 Pull the latest code and rebuild:
 
 ```bash
-git pull && docker compose up -d --build
+git pull && make up && make health
 ```
 
 Library data survives rebuilds — it lives in the SQLite file under `./data/`, which is volume-mounted.
 
-## Backup
+## Backup & Restore
 
-The entire library is one file: `./data/gamebutler.db`. Copy it anywhere (use `cron` + `rsync` if desired for automated backups). Restore by copying it back and restarting the containers:
+The entire library is one file: `./data/gamebutler.db`.
+
+Create a timestamped backup under `./backups/`:
 
 ```bash
-docker compose restart
+make backup
+```
+
+Restore from a backup:
+
+```bash
+make down
+make restore BACKUP=backups/gamebutler-YYYYMMDD-HHMMSS.db
+make up
+make restart && make health
+```
+
+`make restore` saves the current DB to `backups/pre-restore-YYYYMMDD-HHMMSS.db` before replacing it.
+
+For automated backups, run `make backup` from cron or copy `./data/gamebutler.db` with `rsync`.
+
+After manually copying a DB file into place, restart the containers:
+
+```bash
+make restart
 ```
 
 ## Optional Niceties
@@ -47,4 +108,5 @@ docker compose restart
 ## Troubleshooting
 
 - **Port conflict on 8095:** Change the host side of `ports:` in `docker-compose.yml`.
-- **Check logs:** `docker compose logs -f backend` or `docker compose logs -f frontend`.
+- **Check logs:** `make logs`, or `docker compose logs -f backend` / `docker compose logs -f frontend`.
+- **Validate Compose config:** `make compose-config`.

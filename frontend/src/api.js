@@ -16,6 +16,11 @@ export const updateGame = async (appId, updates) => {
   return response.data;
 };
 
+export const reorderQueue = async (appIds) => {
+  const response = await api.put('/games/queue', { app_ids: appIds });
+  return response.data;
+};
+
 export const getRecommendation = async (params = {}) => {
   const response = await api.get('/recommend', { params });
   return response.data;
@@ -30,6 +35,15 @@ export const uploadLibrary = async (file) => {
   return response.data;
 };
 
+export const previewLibraryUpload = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/upload/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export const autoTagLibrary = async () => {
   const response = await api.post('/games/auto-tag');
   return response.data;
@@ -37,6 +51,16 @@ export const autoTagLibrary = async () => {
 
 export const enrichLibrary = async () => {
   const response = await api.post('/games/enrich');
+  return response.data;
+};
+
+export const fetchEnrichmentJob = async (jobId) => {
+  const response = await api.get(`/games/enrich/jobs/${jobId}`);
+  return response.data;
+};
+
+export const fetchCurrentEnrichmentJob = async () => {
+  const response = await api.get('/games/enrich/jobs/current');
   return response.data;
 };
 

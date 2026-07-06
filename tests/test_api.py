@@ -1,10 +1,14 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from src.api import app, get_session
-from src.models import Game, GameStatus, AttentionLevel
+from src.api import process_enrichment
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob
+from src.recommender import GameRecommender
 import pytest
-from unittest.mock import patch
+import pandas as pd
+import os
+from unittest.mock import AsyncMock, patch
 
 # Test Database - In Memory with StaticPool to share connection across threads
 TEST_DATABASE_URL = "sqlite://"
@@ -28,9 +32,13 @@ def mock_lifespan():
 
 @pytest.fixture(name="client")
 def client_fixture():
+    SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
-    with TestClient(app) as client:
-        yield client
+    real_exists = os.path.exists
+    with patch("src.api.engine", engine), \
+         patch("src.api.os.path.exists", side_effect=lambda path: False if str(path).endswith("sample_library.csv") else real_exists(path)):
+        with TestClient(app) as client:
+            yield client
     SQLModel.metadata.drop_all(engine)
 
 def test_list_games(client):
@@ -51,6 +59,23 @@ def test_list_games(client):
     assert len(data) == 1
     assert data[0]["name"] == "Game B"
 
+def test_games_include_rich_metadata(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1,
+            name="Game A",
+            playtime_forever=0,
+            header_image="https://example.com/header.jpg",
+            short_description="A short Steam description.",
+        ))
+        session.commit()
+
+    response = client.get("/games")
+    assert response.status_code == 200
+    data = response.json()
+    assert data[0]["header_image"] == "https://example.com/header.jpg"
+    assert data[0]["short_description"] == "A short Steam description."
+
 def test_update_game(client):
     with Session(engine) as session:
         session.add(Game(id=1, name="Game A", playtime_forever=0, status=GameStatus.LIBRARY))
@@ -67,3 +92,277 @@ def test_update_game(client):
         game = session.get(Game, 1)
         assert game.status == GameStatus.PLAYING
         assert game.attention_level == AttentionLevel.FOCUSED
+
+def test_queue_append_sort_and_reorder(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="First", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Second", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=3, name="Third", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    assert client.put("/games/1", json={"status": "up_next"}).json()["queue_position"] == 1
+    assert client.put("/games/2", json={"status": "up_next"}).json()["queue_position"] == 2
+    assert client.put("/games/3", json={"status": "up_next"}).json()["queue_position"] == 3
+
+    response = client.put("/games/queue", json={"app_ids": [3, 1, 2]})
+
+    assert response.status_code == 200
+    assert [game["id"] for game in response.json()] == [3, 1, 2]
+    assert [game["queue_position"] for game in response.json()] == [1, 2, 3]
+
+    response = client.get("/games?status=up_next")
+    assert [game["id"] for game in response.json()] == [3, 1, 2]
+
+def test_queue_reorder_rejects_bad_input(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Queued", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.add(Game(id=2, name="Library", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    assert client.put("/games/queue", json={"app_ids": [1, 1]}).status_code == 400
+    assert client.put("/games/queue", json={"app_ids": [2]}).status_code == 400
+
+    with Session(engine) as session:
+        session.add(Game(id=3, name="Also Queued", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=2))
+        session.commit()
+
+    assert client.put("/games/queue", json={"app_ids": [1]}).status_code == 400
+
+def test_queue_position_clears_when_removed(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Queued", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.commit()
+
+    response = client.put("/games/1", json={"status": "library"})
+
+    assert response.status_code == 200
+    assert response.json()["queue_position"] is None
+
+def test_recommend_returns_score_and_reasons(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Library Game", "Queued Game"],
+        "Playtime_Forever": [0, 20],
+        "Average_Playtime": [120, 120],
+        "Genre": ["Action", "Action"],
+        "Tags": ["Indie", "Indie"],
+        "status": [GameStatus.LIBRARY, GameStatus.UP_NEXT],
+        "attention_level": [AttentionLevel.UNSET, AttentionLevel.CASUAL],
+    })
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?genre=Action&attention_level=casual")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Name"] == "Queued Game"
+    assert data["score"] > 0
+    assert "Already in your Up Next queue" in data["reasons"]
+    assert "Matches your casual attention setting" in data["reasons"]
+
+def test_recommend_accepts_mood_and_rejects_invalid_mood(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Arcade Game", "Story Game"],
+        "Playtime_Forever": [0, 0],
+        "Average_Playtime": [120, 1200],
+        "Genre": ["Action", "RPG"],
+        "Tags": ["Arcade", "Story"],
+        "status": [GameStatus.LIBRARY, GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.CASUAL, AttentionLevel.FOCUSED],
+    })
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?mood=zone_out")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Name"] == "Arcade Game"
+    assert "Mood: good for zoning out" in data["reasons"]
+
+    response = client.get("/recommend?mood=chaos_mode")
+    assert response.status_code == 422
+
+@pytest.mark.asyncio
+async def test_process_enrichment_persists_rich_metadata(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    details = {
+        "genres": ["Action"],
+        "categories": ["Single-player"],
+        "header_image": "https://example.com/header.jpg",
+        "short_description": "A short Steam description.",
+    }
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        job = session.get(EnrichmentJob, job_id)
+        assert game.genre == "Action"
+        assert game.tags == "Single-player"
+        assert game.header_image == "https://example.com/header.jpg"
+        assert game.short_description == "A short Steam description."
+        assert job.status == "completed"
+        assert job.total == 1
+        assert job.processed == 1
+        assert job.succeeded == 1
+        assert job.failed == 0
+
+def test_enrich_endpoint_returns_job_and_current_progress(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        session.commit()
+
+    details = {
+        "genres": ["Action"],
+        "categories": ["Single-player"],
+        "header_image": "https://example.com/header.jpg",
+        "short_description": "A short Steam description.",
+    }
+    with patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/games/enrich?limit=1")
+
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    response = client.get(f"/games/enrich/jobs/{job_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert data["total"] == 1
+    assert data["processed"] == 1
+    assert data["succeeded"] == 1
+    assert data["failed"] == 0
+
+    response = client.get("/games/enrich/jobs/current")
+    assert response.status_code == 200
+    assert response.json()["id"] == job_id
+
+def test_current_enrichment_job_prefers_running_then_completed(client):
+    with Session(engine) as session:
+        failed = EnrichmentJob(status="failed")
+        running = EnrichmentJob(status="running")
+        completed = EnrichmentJob(status="completed")
+        session.add(failed)
+        session.add(running)
+        session.add(completed)
+        session.commit()
+        session.refresh(running)
+        session.refresh(completed)
+        running_id = running.id
+        completed_id = completed.id
+
+    response = client.get("/games/enrich/jobs/current")
+    assert response.status_code == 200
+    assert response.json()["id"] == running_id
+
+    with Session(engine) as session:
+        running = session.get(EnrichmentJob, running_id)
+        running.status = "failed"
+        session.add(running)
+        session.commit()
+
+    response = client.get("/games/enrich/jobs/current")
+    assert response.status_code == 200
+    assert response.json()["id"] == completed_id
+
+def csv_file(content: str):
+    return {"file": ("library.csv", content, "text/csv")}
+
+def test_upload_preview_reports_changes_without_writing(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Existing", playtime_forever=10, genre="Action", tags="Indie"))
+        session.commit()
+
+    csv = "AppID,Name,Playtime_Forever,Genre,Tags\n1,Existing Updated,20,RPG,Story\n2,New Game,0,Action,Arcade\n2,Duplicate New,1,Action,Arcade\n"
+    response = client.post("/upload/preview", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_rows"] == 3
+    assert data["new_games"] == 1
+    assert data["updated_games"] == 1
+    assert data["duplicate_rows"] == 1
+    assert data["duplicate_app_ids"] == [2]
+
+    with Session(engine) as session:
+        assert session.get(Game, 2) is None
+        assert session.get(Game, 1).name == "Existing"
+
+def test_upload_import_is_collision_safe(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1,
+            name="Existing",
+            playtime_forever=10,
+            genre="Action",
+            tags="Indie",
+            header_image="https://example.com/header.jpg",
+            short_description="Keep me",
+        ))
+        session.commit()
+
+    csv = "AppID,Name,Playtime_Forever,Genre,Tags\n1,Existing Updated,20,Unknown,Unknown\n2,New Game,0,Action,Arcade\n2,Duplicate New,1,Action,Arcade\n"
+    response = client.post("/upload", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["new_games"] == 1
+    assert data["updated_games"] == 1
+    assert data["duplicate_rows"] == 1
+    assert data["games_count"] == 2
+
+    with Session(engine) as session:
+        existing = session.get(Game, 1)
+        new_game = session.get(Game, 2)
+        assert existing.name == "Existing Updated"
+        assert existing.playtime_forever == 20
+        assert existing.genre == "Action"
+        assert existing.tags == "Indie"
+        assert existing.header_image == "https://example.com/header.jpg"
+        assert existing.short_description == "Keep me"
+        assert new_game.name == "New Game"
+
+def test_upload_rolls_back_on_failure(client):
+    csv = "AppID,Name,Playtime_Forever\n1,Good Game,0\nnot-an-id,Bad Game,0\n"
+    response = client.post("/upload", files=csv_file(csv))
+
+    assert response.status_code == 400
+    with Session(engine) as session:
+        assert session.exec(select(Game)).all() == []
+
+@pytest.mark.asyncio
+async def test_process_enrichment_records_failures(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value=None)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        job = session.get(EnrichmentJob, job_id)
+        assert job.status == "failed"
+        assert job.processed == 1
+        assert job.succeeded == 0
+        assert job.failed == 1
+        assert "No Steam details" in job.error_summary

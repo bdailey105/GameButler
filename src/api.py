@@ -7,18 +7,23 @@ import os
 import shutil
 import pandas as pd
 import asyncio
+import tempfile
 from typing import Optional, List
+from datetime import UTC, datetime
 from sqlmodel import Session, select, col
 
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details
 
 # Global recommender instance
 recommender = None
+
+def utc_now():
+    return datetime.now(UTC)
 
 def sync_recommender_with_db():
     """Load data from database into the global recommender instance."""
@@ -103,8 +108,21 @@ class RecommendationResponse(BaseModel):
     Genre: str
     Tags: str
     Average_Playtime: Optional[int] = None
+    header_image: Optional[str] = None
+    short_description: Optional[str] = None
     status: Optional[str] = None
     attention_level: Optional[str] = None
+    score: Optional[int] = None
+    reasons: List[str] = []
+
+class ImportPreviewResponse(BaseModel):
+    filename: str
+    total_rows: int
+    new_games: int
+    updated_games: int
+    unchanged_games: int
+    duplicate_rows: int
+    duplicate_app_ids: List[int] = []
 
 @app.get("/")
 async def root():
@@ -130,7 +148,34 @@ async def list_games(
         query = query.where(col(Game.name).contains(search))
         
     results = session.exec(query).all()
+    if status == GameStatus.UP_NEXT:
+        results = sorted(results, key=lambda game: (game.queue_position is None, game.queue_position or 0, game.name.lower()))
     return results
+
+@app.put("/games/queue", response_model=List[Game])
+async def reorder_queue(
+    reorder: QueueReorder,
+    session: Session = Depends(get_session),
+):
+    if len(reorder.app_ids) != len(set(reorder.app_ids)):
+        raise HTTPException(status_code=400, detail="Queue order contains duplicate game ids")
+
+    queued_games = session.exec(select(Game).where(Game.status == GameStatus.UP_NEXT)).all()
+    queued_by_id = {game.id: game for game in queued_games}
+    missing = [app_id for app_id in reorder.app_ids if app_id not in queued_by_id]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Not queued: {missing[0]}")
+    omitted = [game.id for game in queued_games if game.id not in set(reorder.app_ids)]
+    if omitted:
+        raise HTTPException(status_code=400, detail=f"Missing queued game: {omitted[0]}")
+
+    for position, app_id in enumerate(reorder.app_ids, start=1):
+        queued_by_id[app_id].queue_position = position
+        session.add(queued_by_id[app_id])
+
+    session.commit()
+    sync_recommender_with_db()
+    return sorted(queued_games, key=lambda game: game.queue_position or 0)
 
 @app.put("/games/{app_id}", response_model=Game)
 async def update_game(
@@ -143,7 +188,18 @@ async def update_game(
         raise HTTPException(status_code=404, detail="Game not found")
         
     game_data = game_update.model_dump(exclude_unset=True)
+    new_status = game_data.get("status")
+    if new_status == GameStatus.UP_NEXT and game.status != GameStatus.UP_NEXT:
+        positions = session.exec(
+            select(Game.queue_position).where(Game.status == GameStatus.UP_NEXT)
+        ).all()
+        game.queue_position = max([position or 0 for position in positions], default=0) + 1
+    elif new_status and new_status != GameStatus.UP_NEXT:
+        game.queue_position = None
+
     for key, value in game_data.items():
+        if key == "queue_position":
+            continue
         setattr(game, key, value)
         
     session.add(game)
@@ -169,20 +225,28 @@ async def auto_tag_games(session: Session = Depends(get_session)):
     sync_recommender_with_db()
     return {"message": f"Successfully auto-tagged {count} games."}
 
-async def process_enrichment(limit: int):
+def enrichment_candidates_query(limit: int):
+    return select(Game).where(
+        (Game.genre == "Unknown") | (Game.tags == "Unknown")
+    ).limit(limit)
+
+async def process_enrichment(job_id: int, limit: int):
     """Background task to enrich games."""
     print(f"Starting enrichment task for {limit} games...")
     with Session(engine) as session:
-        # Find games with Unknown genre or tags
-        # Using a simple check for "Unknown" string, which is our default
-        statement = select(Game).where(
-            (Game.genre == "Unknown") | (Game.tags == "Unknown")
-        ).limit(limit)
-        
-        games_to_enrich = session.exec(statement).all()
+        job = session.get(EnrichmentJob, job_id)
+        if not job:
+            print(f"Enrichment job {job_id} not found.")
+            return
+
+        games_to_enrich = session.exec(enrichment_candidates_query(limit)).all()
+        job.total = len(games_to_enrich)
+        job.updated_at = utc_now()
+        session.add(job)
+        session.commit()
         print(f"Found {len(games_to_enrich)} games to enrich.")
         
-        processed = 0
+        saved_metadata = 0
         for game in games_to_enrich:
             try:
                 print(f"Fetching details for {game.name} ({game.id})...")
@@ -191,44 +255,138 @@ async def process_enrichment(limit: int):
                 if details:
                     game.genre = ";".join(details.get("genres", []))
                     game.tags = ";".join(details.get("categories", []))
-                    # If we had image/desc columns, we'd set them here
+                    game.header_image = details.get("header_image") or game.header_image
+                    game.short_description = details.get("short_description") or game.short_description
                     
                     session.add(game)
-                    session.commit()
-                    processed += 1
+                    job.succeeded += 1
+                    saved_metadata += 1
+                else:
+                    job.failed += 1
+                    job.error_summary = f"No Steam details for {game.id}"
                 
                 # Respect rate limits
                 await asyncio.sleep(1.5) 
                 
             except Exception as e:
                 print(f"Error enriching {game.id}: {e}")
+                job.failed += 1
+                job.error_summary = str(e)
+            finally:
+                job.processed += 1
+                job.updated_at = utc_now()
+                session.add(job)
+                session.commit()
                 
-        print(f"Enrichment complete. Processed {processed} games.")
-        if processed > 0:
+        job.status = "failed" if job.failed else "completed"
+        job.completed_at = utc_now()
+        job.updated_at = job.completed_at
+        session.add(job)
+        session.commit()
+        print(f"Enrichment complete. Processed {job.processed} games.")
+        if saved_metadata > 0:
             sync_recommender_with_db()
 
 @app.post("/games/enrich")
 async def enrich_games(
     background_tasks: BackgroundTasks,
-    limit: int = 50
+    limit: int = 50,
+    session: Session = Depends(get_session)
 ):
     """
     Trigger a background job to fetch metadata from Steam for games with missing info.
     """
-    background_tasks.add_task(process_enrichment, limit)
-    return {"message": f"Enrichment started for up to {limit} games. This may take a while."}
+    total = len(session.exec(enrichment_candidates_query(limit)).all())
+    job = EnrichmentJob(total=total)
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    background_tasks.add_task(process_enrichment, job.id, limit)
+    return {"job_id": job.id, "message": f"Enrichment started for up to {limit} games. This may take a while."}
+
+@app.get("/games/enrich/jobs/current", response_model=EnrichmentJob)
+async def current_enrichment_job(session: Session = Depends(get_session)):
+    job = session.exec(
+        select(EnrichmentJob)
+        .where(EnrichmentJob.status == "running")
+        .order_by(EnrichmentJob.created_at.desc())
+    ).first()
+    if not job:
+        job = session.exec(
+            select(EnrichmentJob)
+            .where(EnrichmentJob.status == "completed")
+            .order_by(EnrichmentJob.created_at.desc())
+        ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="No enrichment job found")
+    return job
+
+@app.get("/games/enrich/jobs/{job_id}", response_model=EnrichmentJob)
+async def get_enrichment_job(job_id: int, session: Session = Depends(get_session)):
+    job = session.get(EnrichmentJob, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Enrichment job not found")
+    return job
+
+def preview_import(df: pd.DataFrame, session: Session, filename: str) -> ImportPreviewResponse:
+    app_ids = [int(app_id) for app_id in df["AppID"]]
+    duplicate_app_ids = sorted({app_id for app_id in app_ids if app_ids.count(app_id) > 1})
+    unique_ids = set()
+    new_games = 0
+    updated_games = 0
+
+    for app_id in app_ids:
+        if app_id in unique_ids:
+            continue
+        unique_ids.add(app_id)
+        if session.get(Game, app_id):
+            updated_games += 1
+        else:
+            new_games += 1
+
+    return ImportPreviewResponse(
+        filename=filename,
+        total_rows=len(df),
+        new_games=new_games,
+        updated_games=updated_games,
+        unchanged_games=0,
+        duplicate_rows=len(app_ids) - len(unique_ids),
+        duplicate_app_ids=duplicate_app_ids,
+    )
+
+def save_upload_to_temp(file: UploadFile) -> str:
+    suffix = os.path.splitext(file.filename or "")[1] or ".csv"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        shutil.copyfileobj(file.file, temp_file)
+        return temp_file.name
+
+def load_uploaded_library(file: UploadFile) -> pd.DataFrame:
+    temp_file_path = save_upload_to_temp(file)
+    try:
+        return load_steam_library(temp_file_path)
+    finally:
+        os.remove(temp_file_path)
+
+@app.post("/upload/preview", response_model=ImportPreviewResponse)
+async def preview_library_upload(file: UploadFile = File(...), session: Session = Depends(get_session)):
+    try:
+        df = load_uploaded_library(file)
+        return preview_import(df, session, file.filename or "library.csv")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to preview file: {str(e)}")
 
 @app.post("/upload")
 async def upload_library(file: UploadFile = File(...), session: Session = Depends(get_session)):
-    temp_file_path = f"temp_{file.filename}"
     try:
-        with open(temp_file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        df = load_steam_library(temp_file_path)
+        df = load_uploaded_library(file)
+        preview = preview_import(df, session, file.filename or "library.csv")
+        seen_app_ids = set()
         
         for _, row in df.iterrows():
             app_id = int(row['AppID'])
+            if app_id in seen_app_ids:
+                continue
+            seen_app_ids.add(app_id)
             existing_game = session.get(Game, app_id)
             if existing_game:
                 existing_game.name = str(row['Name'])
@@ -261,11 +419,16 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
         
         session.commit()
         sync_recommender_with_db()
-        os.remove(temp_file_path)
-        return {"message": f"Successfully loaded library from {file.filename}", "games_count": len(recommender.df)}
+        games_count = len(session.exec(select(Game)).all())
+        return {
+            "message": f"Successfully loaded library from {file.filename}",
+            "games_count": games_count,
+            "new_games": preview.new_games,
+            "updated_games": preview.updated_games,
+            "duplicate_rows": preview.duplicate_rows,
+        }
     except Exception as e:
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        session.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
 
 @app.get("/recommend", response_model=RecommendationResponse)
@@ -274,7 +437,8 @@ async def recommend_game(
     tag: Optional[str] = None,
     unplayed_only: bool = False,
     length: Optional[str] = Query(None, pattern="^(short|medium|long)$"),
-    attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$")
+    attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$"),
+    mood: Optional[str] = Query(None, pattern="^(zone_out|story_night|short_session|finish_something|surprise_me)$")
 ):
     if recommender is None or recommender.df.empty:
         raise HTTPException(status_code=404, detail="No game library loaded. Please upload a CSV file.")
@@ -296,13 +460,17 @@ async def recommend_game(
         unplayed_only=unplayed_only,
         min_length=min_len,
         max_length=max_len,
-        attention_level=attention_level
+        attention_level=attention_level,
+        mood=mood
     )
     
     if game is None:
         raise HTTPException(status_code=404, detail="No suitable game found matching your criteria.")
-        
-    return game.to_dict()
+
+    result = game.to_dict()
+    result["score"] = int(result.get("score", 0))
+    result["reasons"] = list(result.get("reasons") or [])
+    return result
 
 if __name__ == "__main__":
     print("Starting Uvicorn...")

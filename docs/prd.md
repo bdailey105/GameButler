@@ -11,11 +11,12 @@ The product encompasses a recommendation engine, a RESTful API, and a web-based 
 ## 2. Product Overview
 
 ### 2.1 Current State Summary
-As of Dec 2025, GameButler is a functional MVP with:
+As of July 2026, GameButler is a functional local-deployment MVP with:
 -   **Full-Stack Architecture**: Python FastAPI backend + React Vite frontend.
 -   **Core Recommendation Engine**: Can ingest Steam CSVs and recommend games based on Genre, Tags, Playtime, and Game Length.
--   **Containerization**: Dockerized for local development/deployment.
--   **Data**: Currently relies on ephemeral CSV uploads or a static sample file.
+-   **Persistent Library State**: SQLite stores imported games, play status, and attention level.
+-   **Containerization**: Docker Compose is the primary local/LAN deployment path.
+-   **Metadata Enrichment**: Steam metadata enrichment can populate missing genres and tags.
 
 ### 2.2 User Problem
 Users with extensive Steam libraries struggle to:
@@ -77,5 +78,7 @@ An interactive tool that:
 | **Web API** | **Done** | FastAPI implementation complete. |
 | **Web UI** | **Done** | React frontend operational. |
 | **Real Data Support** | **Done** | CSV parsing and normalization active. |
-| **Cloud Deployment** | **Pending** | Docker files exist; cloud infra setup pending (Epic 5.2). |
-| **Backlog Management** | **Planned** | Track "Playing", "Up Next", and "Attention Level" (Casual vs Focused). |
+| **Local/LAN Deployment** | **Done** | Docker Compose serves the app locally on port 8095 and proxies API calls through Nginx. |
+| **Backlog Management** | **Done** | Tracks Library, Up Next, Playing, Completed, Abandoned, and Attention Level. |
+| **Metadata Enrichment Progress** | **Pending** | Enrichment starts in the background but does not expose job progress yet. |
+| **Game Art & Descriptions** | **Pending** | Steam client fetches these fields, but the database does not persist them yet. |

@@ -1,0 +1,15 @@
+.git
+.gemini
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+*.log
+.DS_Store
+
+frontend/node_modules
+frontend/dist
+
+data/*.db
+temp_*.csv
+steam-library-*.csv

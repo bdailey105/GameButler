@@ -29,7 +29,7 @@ Comprehensive documentation of the entire system (Backend API, Frontend Web UI, 
 
 ### Technical Summary
 
-GameButler is a containerized full-stack application. The backend is a Python-based REST API using FastAPI that processes CSV data using Pandas. The frontend is a Single Page Application (SPA) built with React and Vite.
+GameButler is a containerized full-stack application intended for local or home-LAN deployment. The backend is a Python-based REST API using FastAPI, Pandas, and SQLite-backed SQLModel persistence. The frontend is a Single Page Application (SPA) built with React and Vite and served by Nginx in Docker.
 
 ### Actual Tech Stack
 
@@ -103,7 +103,10 @@ Data is primarily handled as Pandas DataFrames.
 
 ### API Specifications
 
-**Base URL**: `http://localhost:8000` (Local Dev)
+**Base URL**:
+-   Local backend dev: `http://localhost:8000`
+-   Docker Compose host mapping: `http://localhost:8001`
+-   Local/LAN frontend proxy: `http://<host-ip>:8095/api`
 
 #### 1. Upload Library
 -   **Endpoint**: `POST /upload`
@@ -123,9 +126,10 @@ Data is primarily handled as Pandas DataFrames.
 
 ### Critical Technical Debt
 
-1.  **State Management**: The backend relies on a global `recommender` variable (`src/api.py`). This is not thread-safe or scalable for multiple users. It implies a single-user session model.
-2.  **Data Persistence**: Uploaded files are saved as `temp_{filename}` and then removed. The system resets to `sample_library.csv` on restart or relies on re-uploading.
-3.  **Hardcoded Paths**: References to `../data` in `api.py` rely on specific relative directory structure.
+1.  **State Management**: The backend relies on a global `recommender` variable (`src/api.py`). This matches the current single-user local deployment target, but is not thread-safe or suitable for multiple independent users.
+2.  **Temporary Upload Handling**: Uploaded files are saved as `temp_{filename}` and then removed after import. Failed or concurrent uploads may still collide on filename.
+3.  **Hardcoded Paths**: References to `data/` and `../data` rely on the current project/container layout.
+4.  **Enrichment Jobs**: Metadata enrichment runs as a background task without job records, progress reporting, cancellation, or retry visibility.
 
 ### Workarounds
 
@@ -134,7 +138,7 @@ Data is primarily handled as Pandas DataFrames.
 ## Integration Points
 
 -   **Internal**: Frontend talks to Backend via standard HTTP (Axios).
--   **External**: None currently (data is ingested via CSV file). Future scope implies "Cloud Deployment" and potentially "Real Data Ingestion" via Steam API (though currently CSV based).
+-   **External**: Steam Store API metadata lookups are used for enrichment. Library ownership/playtime still comes from CSV upload.
 
 ## Development and Deployment
 
@@ -162,4 +166,3 @@ Data is primarily handled as Pandas DataFrames.
 -   **Framework**: `pytest`
 -   **Coverage**: Unit tests exist for `recommender` and `data_loader` in `tests/`.
 -   **Running Tests**: `pytest` from the root directory.
-

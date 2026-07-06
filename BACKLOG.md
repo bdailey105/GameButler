@@ -59,6 +59,12 @@
 
 ## Epic 10: Loose Ends
 **Goal:** Finish partially-implemented features.
-- [ ] **Story 10.1: Recommender Exclusion Filter** — Implement the "exclude Completed/Abandoned" default filter (recommender.py has a not-implemented comment).
+- [x] **Story 10.1: Recommender Exclusion Filter** — Completed/Abandoned games are excluded from recommendations by default and covered by a regression test.
 - [ ] **Story 10.2: Enrichment Progress UI** — Show progress/status for the background enrichment job (currently just a fire-and-forget button).
 - [ ] **Story 10.3: Store Game Art & Descriptions** — Persist images/descriptions fetched from Steam (stub comment in api.py).
+
+## Epic 11: Local Deployment Hardening
+**Goal:** Make local and home-LAN deployment the supported production path.
+- [x] **Story 11.1: One-command Local Bootstrap** — Added `make setup`, `make verify`, and local deployment commands.
+- [x] **Story 11.2: Local Health Check Script** — Added `make health` to verify frontend, backend, DB file, and `/api/health` after `docker compose up`.
+- [x] **Story 11.3: Backup/Restore Workflow** — Added `make backup`, `make restore BACKUP=...`, and deployment docs for SQLite recovery.

@@ -12,8 +12,13 @@ data/*.csv
 !data/sample_library.csv
 !data/test_upload.csv
 !data/real_library_sample.csv
+steam-library-*.csv
 temp_*.csv
 *.db
+backups/
+
+# Local agent/tooling config
+.gemini/
 
 # Frontend
 frontend/node_modules/

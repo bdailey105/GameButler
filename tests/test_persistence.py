@@ -1,9 +1,12 @@
 import pytest
 import os
 from sqlmodel import Session, select, create_engine, SQLModel
+from sqlmodel.pool import StaticPool
 from src.models import Game, GameStatus, AttentionLevel
 from src.recommender import GameRecommender
+from src.database import ensure_game_columns, run_migrations
 import pandas as pd
+from unittest.mock import patch
 
 # Use an in-memory database for testing
 TEST_DATABASE_URL = "sqlite:///:memory:"
@@ -26,6 +29,99 @@ def test_game_creation(session: Session):
     assert len(results) == 1
     assert results[0].name == "Test Game"
     assert results[0].status == GameStatus.LIBRARY
+
+def test_game_rich_metadata_persists(session: Session):
+    game = Game(
+        id=1,
+        name="Test Game",
+        playtime_forever=100,
+        header_image="https://example.com/header.jpg",
+        short_description="A short Steam description.",
+    )
+    session.add(game)
+    session.commit()
+
+    result = session.get(Game, 1)
+    assert result.header_image == "https://example.com/header.jpg"
+    assert result.short_description == "A short Steam description."
+    assert result.queue_position is None
+
+def test_existing_game_table_gets_rich_metadata_columns():
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever) VALUES (1, 'Old Game', 0)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        ensure_game_columns()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+    assert "header_image" in columns
+    assert "short_description" in columns
+    assert "queue_position" in columns
+
+def test_queue_position_migration_backfills_existing_queue():
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER, status TEXT)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever, status) VALUES (2, 'Second', 0, 'up_next')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever, status) VALUES (1, 'First', 0, 'up_next')"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        queue = connection.exec_driver_sql(
+            "SELECT id, queue_position FROM game ORDER BY queue_position"
+        ).all()
+
+    assert queue == [(1, 1), (2, 2)]
+
+def test_migrations_are_recorded_and_idempotent():
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        migrations = connection.exec_driver_sql("SELECT id FROM schema_migrations").all()
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+
+    assert migrations == [
+        ("20260706_001_game_rich_metadata",),
+        ("20260706_002_game_queue_position",),
+    ]
+    assert "header_image" in columns
+    assert "short_description" in columns
+    assert "queue_position" in columns
 
 def test_recommender_sync_logic(session: Session):
     # Add some games
