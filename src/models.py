@@ -1,6 +1,6 @@
 from typing import Optional
 from enum import Enum
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from sqlmodel import SQLModel, Field
 
 class GameStatus(str, Enum):
@@ -54,6 +54,6 @@ class EnrichmentJob(SQLModel, table=True):
     succeeded: int = 0
     failed: int = 0
     error_summary: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None

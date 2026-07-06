@@ -9,7 +9,7 @@ import pandas as pd
 import asyncio
 import tempfile
 from typing import Optional, List
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from sqlmodel import Session, select, col
 
 from src.data_loader import load_steam_library
@@ -23,7 +23,7 @@ from src.steam_client import fetch_game_details
 recommender = None
 
 def utc_now():
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 def sync_recommender_with_db():
     """Load data from database into the global recommender instance."""
