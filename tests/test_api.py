@@ -8,6 +8,7 @@ from src.recommender import GameRecommender
 import pytest
 import pandas as pd
 import os
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 # Test Database - In Memory with StaticPool to share connection across threads
@@ -277,6 +278,69 @@ def test_current_enrichment_job_prefers_running_then_completed(client):
     response = client.get("/games/enrich/jobs/current")
     assert response.status_code == 200
     assert response.json()["id"] == completed_id
+
+@pytest.mark.asyncio
+async def test_process_enrichment_marks_job_failed_on_crash(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    with patch("src.api.engine", engine), \
+         patch("src.api.enrichment_candidates_query", side_effect=RuntimeError("boom")), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        job = session.get(EnrichmentJob, job_id)
+        assert job.status == "failed"
+        assert job.error_summary == "boom"
+        assert job.completed_at is not None
+
+def test_enrich_endpoint_rejects_concurrent_job(client):
+    with Session(engine) as session:
+        existing = EnrichmentJob(status="running")
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        existing_id = existing.id
+
+    response = client.post("/games/enrich?limit=1")
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] == existing_id
+
+    with Session(engine) as session:
+        running_jobs = session.exec(
+            select(EnrichmentJob).where(EnrichmentJob.status == "running")
+        ).all()
+        assert len(running_jobs) == 1
+
+def test_current_enrichment_job_returns_failed_when_latest(client):
+    with Session(engine) as session:
+        completed = EnrichmentJob(status="completed")
+        session.add(completed)
+        session.commit()
+        session.refresh(completed)
+        completed.created_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        session.add(completed)
+        session.commit()
+
+        failed = EnrichmentJob(status="failed")
+        session.add(failed)
+        session.commit()
+        session.refresh(failed)
+        failed.created_at = datetime(2020, 1, 2, tzinfo=timezone.utc)
+        session.add(failed)
+        session.commit()
+        failed_id = failed.id
+
+    response = client.get("/games/enrich/jobs/current")
+    assert response.status_code == 200
+    assert response.json()["id"] == failed_id
 
 def csv_file(content: str):
     return {"file": ("library.csv", content, "text/csv")}

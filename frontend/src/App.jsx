@@ -299,9 +299,11 @@ function LibraryView({ onMove, onAttentionChange }) {
   useEffect(() => {
     if (!enrichmentJob || enrichmentJob.status !== 'running') return
 
+    let cancelled = false
     const timer = setInterval(async () => {
       try {
         const job = await fetchEnrichmentJob(enrichmentJob.id)
+        if (cancelled) return
         setEnrichmentJob(job)
         setEnriching(job.status === 'running')
         if (job.status !== 'running') {
@@ -310,12 +312,16 @@ function LibraryView({ onMove, onAttentionChange }) {
         }
       } catch (err) {
         console.error(err)
+        if (cancelled) return
         setEnriching(false)
         clearInterval(timer)
       }
     }, 1500)
 
-    return () => clearInterval(timer)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [enrichmentJob, loadLibrary])
 
   const handleAutoTag = async () => {
@@ -336,12 +342,7 @@ function LibraryView({ onMove, onAttentionChange }) {
     setEnriching(true)
     try {
       const res = await enrichLibrary()
-      const job = await fetchEnrichmentJob(res.job_id)
-      setEnrichmentJob(job)
-      setEnriching(job.status === 'running')
-      if (job.status !== 'running') {
-        loadLibrary()
-      }
+      setEnrichmentJob({ id: res.job_id, status: 'running' })
       setAutoTagMsg(res.message) // Reusing msg state for simplicity
       setTimeout(() => setAutoTagMsg(''), 5000)
     } catch (err) {

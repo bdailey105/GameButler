@@ -239,53 +239,62 @@ async def process_enrichment(job_id: int, limit: int):
             print(f"Enrichment job {job_id} not found.")
             return
 
-        games_to_enrich = session.exec(enrichment_candidates_query(limit)).all()
-        job.total = len(games_to_enrich)
-        job.updated_at = utc_now()
-        session.add(job)
-        session.commit()
-        print(f"Found {len(games_to_enrich)} games to enrich.")
-        
-        saved_metadata = 0
-        for game in games_to_enrich:
-            try:
-                print(f"Fetching details for {game.name} ({game.id})...")
-                details = await fetch_game_details(game.id)
-                
-                if details:
-                    game.genre = ";".join(details.get("genres", []))
-                    game.tags = ";".join(details.get("categories", []))
-                    game.header_image = details.get("header_image") or game.header_image
-                    game.short_description = details.get("short_description") or game.short_description
-                    
-                    session.add(game)
-                    job.succeeded += 1
-                    saved_metadata += 1
-                else:
+        try:
+            games_to_enrich = session.exec(enrichment_candidates_query(limit)).all()
+            job.total = len(games_to_enrich)
+            job.updated_at = utc_now()
+            session.add(job)
+            session.commit()
+            print(f"Found {len(games_to_enrich)} games to enrich.")
+
+            saved_metadata = 0
+            for game in games_to_enrich:
+                try:
+                    print(f"Fetching details for {game.name} ({game.id})...")
+                    details = await fetch_game_details(game.id)
+
+                    if details:
+                        game.genre = ";".join(details.get("genres", []))
+                        game.tags = ";".join(details.get("categories", []))
+                        game.header_image = details.get("header_image") or game.header_image
+                        game.short_description = details.get("short_description") or game.short_description
+
+                        session.add(game)
+                        job.succeeded += 1
+                        saved_metadata += 1
+                    else:
+                        job.failed += 1
+                        job.error_summary = f"No Steam details for {game.id}"
+
+                    # Respect rate limits
+                    await asyncio.sleep(1.5)
+
+                except Exception as e:
+                    print(f"Error enriching {game.id}: {e}")
                     job.failed += 1
-                    job.error_summary = f"No Steam details for {game.id}"
-                
-                # Respect rate limits
-                await asyncio.sleep(1.5) 
-                
-            except Exception as e:
-                print(f"Error enriching {game.id}: {e}")
-                job.failed += 1
-                job.error_summary = str(e)
-            finally:
-                job.processed += 1
-                job.updated_at = utc_now()
-                session.add(job)
-                session.commit()
-                
-        job.status = "failed" if job.failed else "completed"
-        job.completed_at = utc_now()
-        job.updated_at = job.completed_at
-        session.add(job)
-        session.commit()
-        print(f"Enrichment complete. Processed {job.processed} games.")
-        if saved_metadata > 0:
-            sync_recommender_with_db()
+                    job.error_summary = str(e)
+                finally:
+                    job.processed += 1
+                    job.updated_at = utc_now()
+                    session.add(job)
+                    session.commit()
+
+            job.status = "failed" if job.failed else "completed"
+            job.completed_at = utc_now()
+            job.updated_at = job.completed_at
+            session.add(job)
+            session.commit()
+            print(f"Enrichment complete. Processed {job.processed} games.")
+            if saved_metadata > 0:
+                sync_recommender_with_db()
+        except Exception as e:
+            print(f"Enrichment job {job_id} crashed: {e}")
+            job.status = "failed"
+            job.error_summary = str(e)
+            job.completed_at = utc_now()
+            job.updated_at = job.completed_at
+            session.add(job)
+            session.commit()
 
 @app.post("/games/enrich")
 async def enrich_games(
@@ -296,6 +305,12 @@ async def enrich_games(
     """
     Trigger a background job to fetch metadata from Steam for games with missing info.
     """
+    existing = session.exec(
+        select(EnrichmentJob).where(EnrichmentJob.status == "running")
+    ).first()
+    if existing:
+        return {"job_id": existing.id, "message": "Enrichment already in progress."}
+
     total = len(session.exec(enrichment_candidates_query(limit)).all())
     job = EnrichmentJob(total=total)
     session.add(job)
@@ -314,7 +329,6 @@ async def current_enrichment_job(session: Session = Depends(get_session)):
     if not job:
         job = session.exec(
             select(EnrichmentJob)
-            .where(EnrichmentJob.status == "completed")
             .order_by(EnrichmentJob.created_at.desc())
         ).first()
     if not job:
