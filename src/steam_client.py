@@ -10,10 +10,10 @@ async def fetch_game_details(app_id: int) -> Optional[Dict]:
     Returns a dictionary with 'genres', 'categories', 'header_image', 'short_description'.
     Returns None if the game is not found or an error occurs.
     """
-    url = f"http://store.steampowered.com/api/appdetails?appids={app_id}"
-    
+    url = f"https://store.steampowered.com/api/appdetails?appids={app_id}"
+
     try:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(url, timeout=10.0)
             
             if response.status_code == 429:
