@@ -92,3 +92,10 @@
 - [x] **Story 15.1: Background Sync Loop** — Backend syncs at startup then every `SYNC_INTERVAL_HOURS` (default 24) when Steam creds are set; `0` disables.
 - [x] **Story 15.2: Shared Sync Path** — Manual endpoint and scheduler share one `run_steam_sync`, so PlayEvent logging behaves identically.
 - [x] **Story 15.3: Config & Docs** — `SYNC_INTERVAL_HOURS` through Compose; DEPLOY.md auto-sync section.
+
+## Epic 16: Multi-Platform Library (Nintendo & Beyond)
+**Goal:** Track non-Steam games — primarily Switch — alongside the Steam library.
+- [ ] **Story 16.1: Platform Foundation** — `platform` column on Game (default `steam`, ALTER TABLE migration); Steam sync and enrichment scoped to `platform == "steam"`; `POST /games` creates manual games with IDs allocated from 1,000,000,000+ so they can never collide with Steam AppIDs.
+- [ ] **Story 16.2: RAWG Metadata Client** — `rawg_client.search_game(name)` fetches art + genres from RAWG (free API key, optional `RAWG_API_KEY` env var); manual games get auto-filled metadata on add when configured, letter-placeholder cards otherwise.
+- [ ] **Story 16.3: Add Game UI** — "Add Game" form (name, platform select: Switch/PlayStation/Xbox/PC/Retro, attention level); platform badge on non-Steam cards; playtime row hidden for non-Steam games (no data source — stays 0, recommender treats as unplayed); platform filter in Library.
+- [ ] **Story 16.4: Config & Docs** — `RAWG_API_KEY` through Compose; DEPLOY.md setup section.
