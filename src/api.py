@@ -232,7 +232,7 @@ async def auto_tag_games(session: Session = Depends(get_session)):
 
 def enrichment_candidates_query(limit: int):
     return select(Game).where(
-        (Game.genre == "Unknown") | (Game.tags == "Unknown")
+        (Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None)  # noqa: E711
     ).limit(limit)
 
 async def process_enrichment(job_id: int, limit: int):
@@ -259,9 +259,12 @@ async def process_enrichment(job_id: int, limit: int):
                     details = await fetch_game_details(game.id)
 
                     if details:
-                        game.genre = ";".join(details.get("genres", []))
-                        game.tags = ";".join(details.get("categories", []))
-                        game.header_image = details.get("header_image") or game.header_image
+                        if game.genre == "Unknown" and details.get("genres"):
+                            game.genre = ";".join(details["genres"])
+                        if game.tags == "Unknown" and details.get("categories"):
+                            game.tags = ";".join(details["categories"])
+                        # "" = checked, Steam has no art (keeps game out of future candidate runs)
+                        game.header_image = details.get("header_image") or game.header_image or ""
                         game.short_description = details.get("short_description") or game.short_description
 
                         session.add(game)
@@ -387,6 +390,7 @@ async def activity_stats(limit: int = 20, session: Session = Depends(get_session
             "id": event.id,
             "game_id": event.game_id,
             "game_name": game.name if game else None,
+            "header_image": game.header_image if game else None,
             "event_type": event.event_type,
             "old_value": event.old_value,
             "new_value": event.new_value,

@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from src.api import app, get_session
-from src.api import process_enrichment
+from src.api import process_enrichment, enrichment_candidates_query
 from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent
 from src.recommender import GameRecommender
 import pytest
@@ -570,3 +570,46 @@ def test_activity_stats_endpoint(client):
     # newest-first
     timestamps = [event["created_at"] for event in data["events"]]
     assert timestamps == sorted(timestamps, reverse=True)
+
+def test_enrichment_candidates_include_missing_art(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Missing Art", playtime_forever=0, genre="Action", tags="Indie", header_image=None))
+        session.add(Game(id=2, name="Unknown Genre", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        session.add(Game(id=3, name="Fully Enriched", playtime_forever=0, genre="Action", tags="Indie", header_image="https://example.com/header.jpg"))
+        session.commit()
+
+    with Session(engine) as session:
+        candidates = session.exec(enrichment_candidates_query(50)).all()
+        candidate_ids = {game.id for game in candidates}
+
+    assert 1 in candidate_ids
+    assert 2 in candidate_ids
+    assert 3 not in candidate_ids
+
+@pytest.mark.asyncio
+async def test_enrichment_preserves_known_genre(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Action", tags="Indie", header_image=None))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    details = {
+        "genres": ["Casual"],
+        "categories": ["Single-player"],
+        "header_image": "http://img",
+        "short_description": "d",
+    }
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.genre == "Action"
+        assert game.tags == "Indie"
+        assert game.header_image == "http://img"

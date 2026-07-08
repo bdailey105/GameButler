@@ -183,11 +183,15 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
         <section className="result-card">
           <p className="eyebrow">Recommendation</p>
           {recommendation.score !== undefined && <span className="score-pill">{recommendation.score}% match</span>}
+          {recommendation.header_image && (
+            <img className="result-hero" src={recommendation.header_image} alt="" loading="lazy" />
+          )}
           <div className="game-title">{recommendation.Name}</div>
           <div className="game-details">
             <span className="badge">{recommendation.Genre}</span>
             <span className="badge secondary">{recommendation.Tags.split(';')[0]}</span>
           </div>
+          {recommendation.short_description && <p className="game-description">{recommendation.short_description}</p>}
           {recommendation.reasons?.length > 0 && (
             <div className="why-panel">
               <strong>Why this game</strong>
@@ -276,6 +280,7 @@ function DashboardView({ games, onMove, onAttentionChange }) {
                 <ul className="activity-list">
                   {activity.events.map(ev => (
                     <li key={ev.id ?? `${ev.game_id}-${ev.created_at}`} className="activity-item">
+                      {ev.header_image && <img className="activity-thumb" src={ev.header_image} alt="" loading="lazy" />}
                       <strong>{ev.game_name}</strong>{' '}
                       {ev.event_type === 'playtime'
                         ? `+${((ev.new_value - ev.old_value) / 60).toFixed(1)}h played`

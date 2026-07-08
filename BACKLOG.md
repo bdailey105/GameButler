@@ -80,3 +80,9 @@
 - [x] **Story 13.1: Play Event Log** — `PlayEvent` table; status transitions and Steam-sync playtime deltas logged automatically.
 - [x] **Story 13.2: Activity Stats Endpoint** — `GET /stats/activity`: hours this week, started/finished this month, recent event feed.
 - [x] **Story 13.3: Dashboard Activity Panel** — Third dashboard column with stat badges and recent-activity feed.
+
+## Epic 14: Art Everywhere
+**Goal:** Game art across the whole app, not just library cards.
+- [x] **Story 14.1: Library-wide Art Backfill** — Enrichment candidates now include games missing `header_image` (previously only Unknown genre/tags), without clobbering known genres/tags.
+- [x] **Story 14.2: Recommendation Hero Image** — Butler result card shows header art + short description.
+- [x] **Story 14.3: Activity Feed Thumbnails** — Recent Activity events show game thumbnails.
