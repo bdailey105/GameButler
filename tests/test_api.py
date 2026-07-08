@@ -3,6 +3,7 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query
+from src.api import run_steam_sync, steam_sync_interval_seconds
 from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent
 from src.recommender import GameRecommender
 import pytest
@@ -641,3 +642,38 @@ async def test_enrichment_preserves_known_genre(client):
         assert game.genre == "Action"
         assert game.tags == "Indie"
         assert game.header_image == "http://img"
+
+def test_sync_interval_helper(monkeypatch):
+    monkeypatch.setenv("STEAM_API_KEY", "test-key")
+    monkeypatch.setenv("STEAM_ID", "test-steam-id")
+
+    monkeypatch.delenv("SYNC_INTERVAL_HOURS", raising=False)
+    assert steam_sync_interval_seconds() == 86400
+
+    monkeypatch.setenv("SYNC_INTERVAL_HOURS", "6")
+    assert steam_sync_interval_seconds() == 21600
+
+    monkeypatch.setenv("SYNC_INTERVAL_HOURS", "0")
+    assert steam_sync_interval_seconds() is None
+
+    monkeypatch.setenv("SYNC_INTERVAL_HOURS", "garbage")
+    assert steam_sync_interval_seconds() is None
+
+    monkeypatch.delenv("STEAM_API_KEY", raising=False)
+    monkeypatch.delenv("STEAM_ID", raising=False)
+    assert steam_sync_interval_seconds() is None
+
+@pytest.mark.asyncio
+async def test_run_steam_sync_callable_directly(client):
+    owned_games = [{"appid": 30, "name": "Direct Game", "playtime_forever": 50}]
+    with patch("src.api.fetch_owned_games", new=AsyncMock(return_value=owned_games)), \
+         patch("src.api.sync_recommender_with_db"):
+        with Session(engine) as session:
+            result = await run_steam_sync(session)
+
+    assert result["added"] == 1
+
+    with Session(engine) as session:
+        game = session.get(Game, 30)
+        assert game is not None
+        assert game.name == "Direct Game"

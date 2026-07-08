@@ -64,6 +64,17 @@ Then run `docker compose up -d --build`.
 
 **Note:** Your Steam profile's "Game details" must be public for the API to return your library. Without these vars the Sync Steam button returns a friendly "not configured" error; CSV upload keeps working regardless.
 
+### Auto-Sync
+
+When the Steam vars are set, the backend syncs automatically: once at startup, then every `SYNC_INTERVAL_HOURS` (default 24). Override the interval or disable it in the same `.env` file:
+
+```
+SYNC_INTERVAL_HOURS=12   # sync twice a day
+SYNC_INTERVAL_HOURS=0    # disable auto-sync (manual button still works)
+```
+
+Auto-sync keeps the activity feed's playtime history accurate without needing to click Sync Steam.
+
 ## Health Check
 
 After the containers start, verify the local deployment:

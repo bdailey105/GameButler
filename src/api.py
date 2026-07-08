@@ -83,7 +83,17 @@ async def lifespan(app: FastAPI):
                 print(f"Warning: Sample data not found at {sample_path}")
     
     sync_recommender_with_db()
+
+    task = None
+    interval = steam_sync_interval_seconds()
+    if interval is not None:
+        task = asyncio.create_task(steam_sync_scheduler())
+    else:
+        print("Steam auto-sync disabled (no credentials or SYNC_INTERVAL_HOURS=0).")
+
     yield
+    if task is not None:
+        task.cancel()
     print("Shutting down...")
 
 app = FastAPI(
@@ -519,12 +529,9 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
 
-@app.post("/sync/steam")
-async def sync_steam_library(session: Session = Depends(get_session)):
+async def run_steam_sync(session: Session) -> dict:
     api_key = os.getenv("STEAM_API_KEY")
     steam_id = os.getenv("STEAM_ID")
-    if not api_key or not steam_id:
-        raise HTTPException(status_code=503, detail="Steam sync not configured. Set STEAM_API_KEY and STEAM_ID environment variables.")
 
     games = await fetch_owned_games(api_key, steam_id)
     if games is None:
@@ -571,6 +578,40 @@ async def sync_steam_library(session: Session = Depends(get_session)):
         "total": len(games),
         "message": f"Steam sync complete: {added} added, {updated} updated.",
     }
+
+def steam_sync_interval_seconds() -> Optional[int]:
+    """None = auto-sync disabled (no creds or SYNC_INTERVAL_HOURS=0)."""
+    if not (os.getenv("STEAM_API_KEY") and os.getenv("STEAM_ID")):
+        return None
+    try:
+        hours = float(os.getenv("SYNC_INTERVAL_HOURS", "24"))
+    except ValueError:
+        return None
+    if hours <= 0:
+        return None
+    return int(hours * 3600)
+
+async def steam_sync_scheduler():
+    while True:
+        try:
+            with Session(engine) as session:
+                result = await run_steam_sync(session)
+                print(f"Auto-sync: {result['message']}")
+        except Exception as e:
+            print(f"Auto-sync failed: {e}")
+        interval = steam_sync_interval_seconds()
+        if interval is None:
+            break
+        await asyncio.sleep(interval)
+
+@app.post("/sync/steam")
+async def sync_steam_library(session: Session = Depends(get_session)):
+    api_key = os.getenv("STEAM_API_KEY")
+    steam_id = os.getenv("STEAM_ID")
+    if not api_key or not steam_id:
+        raise HTTPException(status_code=503, detail="Steam sync not configured. Set STEAM_API_KEY and STEAM_ID environment variables.")
+
+    return await run_steam_sync(session)
 
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(

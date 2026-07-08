@@ -86,3 +86,9 @@
 - [x] **Story 14.1: Library-wide Art Backfill** — Enrichment candidates now include games missing `header_image` (previously only Unknown genre/tags), without clobbering known genres/tags.
 - [x] **Story 14.2: Recommendation Hero Image** — Butler result card shows header art + short description.
 - [x] **Story 14.3: Activity Feed Thumbnails** — Recent Activity events show game thumbnails.
+
+## Epic 15: Auto-Sync Scheduler
+**Goal:** Library stays fresh and habit history stays accurate without manual syncing.
+- [x] **Story 15.1: Background Sync Loop** — Backend syncs at startup then every `SYNC_INTERVAL_HOURS` (default 24) when Steam creds are set; `0` disables.
+- [x] **Story 15.2: Shared Sync Path** — Manual endpoint and scheduler share one `run_steam_sync`, so PlayEvent logging behaves identically.
+- [x] **Story 15.3: Config & Docs** — `SYNC_INTERVAL_HOURS` through Compose; DEPLOY.md auto-sync section.
