@@ -270,6 +270,17 @@ async def process_enrichment(job_id: int, limit: int):
                         session.add(game)
                         job.succeeded += 1
                         saved_metadata += 1
+                    elif details == {}:
+                        # Steam has no store page (delisted/legacy) — mark terminal so the
+                        # game drops out of future candidate runs instead of failing forever
+                        if game.genre == "Unknown":
+                            game.genre = "Unlisted"
+                        if game.tags == "Unknown":
+                            game.tags = ""
+                        if game.header_image is None:
+                            game.header_image = ""
+                        session.add(game)
+                        job.succeeded += 1
                     else:
                         job.failed += 1
                         job.error_summary = f"No Steam details for {game.id}"

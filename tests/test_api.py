@@ -431,6 +431,34 @@ async def test_process_enrichment_records_failures(client):
         assert job.failed == 1
         assert "No Steam details" in job.error_summary
 
+@pytest.mark.asyncio
+async def test_process_enrichment_marks_delisted_terminal(client):
+    with Session(engine) as session:
+        session.add(Game(id=2430, name="Dead App", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value={})), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        job = session.get(EnrichmentJob, job_id)
+        assert job.status == "completed"
+        assert job.succeeded == 1
+        assert job.failed == 0
+
+        game = session.get(Game, 2430)
+        assert game.genre == "Unlisted"
+        assert game.header_image == ""
+        candidates = session.exec(enrichment_candidates_query(50)).all()
+        assert game.id not in [candidate.id for candidate in candidates]
+
 def test_steam_sync_requires_config(client, monkeypatch):
     monkeypatch.delenv("STEAM_API_KEY", raising=False)
     monkeypatch.delenv("STEAM_ID", raising=False)

@@ -27,8 +27,10 @@ async def fetch_game_details(app_id: int) -> Optional[Dict]:
             # Steam API returns { "app_id": { "success": true, "data": { ... } } }
             app_data = data.get(str(app_id), {})
             if not app_data.get("success"):
-                logger.warning(f"Steam API reported failure for AppID {app_id}")
-                return None
+                # Permanent: Steam has no store page for this app (delisted/legacy).
+                # Distinct from None, which means a transient error worth retrying.
+                logger.warning(f"Steam has no store page for AppID {app_id}")
+                return {}
                 
             details = app_data.get("data", {})
             

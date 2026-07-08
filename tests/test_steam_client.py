@@ -47,4 +47,5 @@ async def test_fetch_game_details_failure():
         )
         
         result = await fetch_game_details(999999)
-        assert result is None
+        # {} = permanent "no store page" (delisted); None is reserved for transient errors
+        assert result == {}
