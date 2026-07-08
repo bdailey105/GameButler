@@ -11,6 +11,11 @@ export const fetchGames = async (params = {}) => {
   return response.data;
 };
 
+export const addGame = async (payload) => {
+  const response = await api.post('/games', payload);
+  return response.data;
+};
+
 export const updateGame = async (appId, updates) => {
   const response = await api.put(`/games/${appId}`, updates);
   return response.data;

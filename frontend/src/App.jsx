@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity } from './api'
+import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, addGame } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] }) {
+  const platformLabels = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
   const primaryTag = game.tags?.split(';')[0]
   const status = game.status || 'library'
   const attentionLevels = [
@@ -23,6 +24,7 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] 
         <div className="game-meta">
           {game.genre && <span className="badge">{game.genre}</span>}
           {primaryTag && <span className="badge secondary">{primaryTag}</span>}
+          {game.platform && game.platform !== 'steam' && <span className="badge secondary">{platformLabels[game.platform] || game.platform}</span>}
         </div>
         {game.short_description && <p className="game-description">{game.short_description}</p>}
         
@@ -43,7 +45,9 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] 
         </div>
 
         <div className="game-stats">
-          <p><strong>Playtime:</strong> {game.playtime_forever} mins</p>
+          {(game.platform === 'steam' || game.playtime_forever > 0) && (
+            <p><strong>Playtime:</strong> {game.playtime_forever} mins</p>
+          )}
         </div>
       </div>
       <div className="game-card-actions">
@@ -307,6 +311,7 @@ function LibraryView({ onMove, onAttentionChange }) {
   const [games, setGames] = useState([])
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
+  const [platformFilter, setPlatformFilter] = useState('')
   const [loading, setLoading] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [enrichmentJob, setEnrichmentJob] = useState(null)
@@ -317,6 +322,7 @@ function LibraryView({ onMove, onAttentionChange }) {
     try {
       const params = { status: 'library' }
       if (attentionFilter) params.attention_level = attentionFilter
+      if (platformFilter) params.platform = platformFilter
       if (search) params.search = search
       const data = await fetchGames(params)
       setGames(data)
@@ -325,7 +331,7 @@ function LibraryView({ onMove, onAttentionChange }) {
     } finally {
       setLoading(false)
     }
-  }, [attentionFilter, search])
+  }, [attentionFilter, platformFilter, search])
 
   useEffect(() => {
     loadLibrary()
@@ -434,6 +440,15 @@ function LibraryView({ onMove, onAttentionChange }) {
             <option value="unset">Uncategorized</option>
             <option value="casual">☕ Casual</option>
             <option value="focused">🎯 Focused</option>
+          </select>
+          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="att-filter">
+            <option value="">All Platforms</option>
+            <option value="steam">Steam</option>
+            <option value="switch">Switch</option>
+            <option value="playstation">PlayStation</option>
+            <option value="xbox">Xbox</option>
+            <option value="pc">PC</option>
+            <option value="retro">Retro</option>
           </select>
           <button className="secondary-btn" onClick={handleSync} disabled={loading || enriching}>🔄 Sync Steam</button>
           <button className="secondary-btn" onClick={handleAutoTag} disabled={loading} title="Auto-tag uncategorized games">
@@ -597,6 +612,10 @@ function UploadView({ onUploaded }) {
   const [selectedFile, setSelectedFile] = useState(null)
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualPlatform, setManualPlatform] = useState('switch')
+  const [manualMsg, setManualMsg] = useState('')
+  const [addingGame, setAddingGame] = useState(false)
 
   const handlePreview = async (event) => {
     const file = event.target.files[0]
@@ -633,6 +652,24 @@ function UploadView({ onUploaded }) {
     }
   }
 
+  const handleAddGame = async (e) => {
+    e.preventDefault()
+    if (!manualName.trim() || addingGame) return
+    setAddingGame(true)
+    try {
+      const game = await addGame({ name: manualName.trim(), platform: manualPlatform })
+      setManualMsg(`Added ${game.name}${game.header_image ? ' (art found)' : ''}`)
+      setManualName('')
+      setTimeout(() => setManualMsg(''), 5000)
+    } catch (err) {
+      console.error(err)
+      setManualMsg(err.response?.data?.detail || 'Failed to add game.')
+      setTimeout(() => setManualMsg(''), 8000)
+    } finally {
+      setAddingGame(false)
+    }
+  }
+
   return (
     <div className="view upload-view">
       <section className="card">
@@ -666,6 +703,32 @@ function UploadView({ onUploaded }) {
         )}
         {uploadMsg && <p className="success-msg">{uploadMsg}</p>}
         {loading && <p>Processing...</p>}
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Manual</p>
+        <h2>Add a game manually</h2>
+        <p>For Switch, PlayStation, Xbox, or anything else outside Steam.</p>
+        <form onSubmit={handleAddGame}>
+          <div className="filter-grid">
+            <div className="filter-group">
+              <label>Name:</label>
+              <input type="text" value={manualName} onChange={(e) => setManualName(e.target.value)} placeholder="e.g. Tears of the Kingdom" />
+            </div>
+            <div className="filter-group">
+              <label>Platform:</label>
+              <select value={manualPlatform} onChange={(e) => setManualPlatform(e.target.value)}>
+                <option value="switch">Switch</option>
+                <option value="playstation">PlayStation</option>
+                <option value="xbox">Xbox</option>
+                <option value="pc">PC (non-Steam)</option>
+                <option value="retro">Retro</option>
+              </select>
+            </div>
+          </div>
+          <button className="primary-btn" type="submit" disabled={!manualName.trim() || addingGame}>{addingGame ? 'Adding...' : 'Add Game'}</button>
+        </form>
+        {manualMsg && <p className="success-msg">{manualMsg}</p>}
       </section>
     </div>
   )

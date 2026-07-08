@@ -677,3 +677,66 @@ async def test_run_steam_sync_callable_directly(client):
         game = session.get(Game, 30)
         assert game is not None
         assert game.name == "Direct Game"
+
+def test_create_manual_game(client):
+    with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/games", json={"name": "Zelda TOTK", "platform": "switch"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["id"] >= 1_000_000_000
+    assert data["platform"] == "switch"
+    assert data["genre"] == "Unknown"
+    assert data["playtime_forever"] == 0
+    first_id = data["id"]
+
+    with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/games", json={"name": "Another Game", "platform": "switch"})
+
+    assert response.status_code == 200
+    assert response.json()["id"] == first_id + 1
+
+def test_create_manual_game_rejects_bad_input(client):
+    response = client.post("/games", json={"name": "   ", "platform": "switch"})
+    assert response.status_code == 400
+
+    response = client.post("/games", json={"name": "Valid Name", "platform": "steam"})
+    assert response.status_code == 400
+
+    with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.sync_recommender_with_db"):
+        assert client.post("/games", json={"name": "Hades", "platform": "switch"}).status_code == 200
+        response = client.post("/games", json={"name": "hades", "platform": "switch"})
+    assert response.status_code == 400
+    assert "already in your library" in response.json()["detail"]
+
+def test_create_manual_game_uses_rawg(client):
+    rawg_result = {"header_image": "http://img", "genres": ["Adventure", "RPG"]}
+    with patch("src.api.search_game", new=AsyncMock(return_value=rawg_result)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/games", json={"name": "Zelda TOTK", "platform": "switch"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["genre"] == "Adventure;RPG"
+    assert data["header_image"] == "http://img"
+
+def test_enrichment_and_platform_filter_exclude_manual(client):
+    with Session(engine) as session:
+        session.add(Game(id=1_000_000_000, name="Manual Game", playtime_forever=0, platform="switch", genre="Unknown", header_image=None))
+        session.add(Game(id=1, name="Steam Game", playtime_forever=0, genre="Unknown"))
+        session.commit()
+
+    with Session(engine) as session:
+        candidates = session.exec(enrichment_candidates_query(50)).all()
+        candidate_ids = {game.id for game in candidates}
+
+    assert candidate_ids == {1}
+
+    response = client.get("/games?platform=switch")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["id"] == 1_000_000_000

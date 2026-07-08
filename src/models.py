@@ -24,6 +24,7 @@ class GameBase(SQLModel):
     short_description: Optional[str] = None
     status: GameStatus = Field(default=GameStatus.LIBRARY)
     attention_level: AttentionLevel = Field(default=AttentionLevel.UNSET)
+    platform: str = Field(default="steam")
     queue_position: Optional[int] = None
 
 class Game(GameBase, table=True):

@@ -95,7 +95,7 @@
 
 ## Epic 16: Multi-Platform Library (Nintendo & Beyond)
 **Goal:** Track non-Steam games — primarily Switch — alongside the Steam library.
-- [ ] **Story 16.1: Platform Foundation** — `platform` column on Game (default `steam`, ALTER TABLE migration); Steam sync and enrichment scoped to `platform == "steam"`; `POST /games` creates manual games with IDs allocated from 1,000,000,000+ so they can never collide with Steam AppIDs.
-- [ ] **Story 16.2: RAWG Metadata Client** — `rawg_client.search_game(name)` fetches art + genres from RAWG (free API key, optional `RAWG_API_KEY` env var); manual games get auto-filled metadata on add when configured, letter-placeholder cards otherwise.
-- [ ] **Story 16.3: Add Game UI** — "Add Game" form (name, platform select: Switch/PlayStation/Xbox/PC/Retro, attention level); platform badge on non-Steam cards; playtime row hidden for non-Steam games (no data source — stays 0, recommender treats as unplayed); platform filter in Library.
-- [ ] **Story 16.4: Config & Docs** — `RAWG_API_KEY` through Compose; DEPLOY.md setup section.
+- [x] **Story 16.1: Platform Foundation** — `platform` column on Game (default `steam`, ALTER TABLE migration); Steam sync and enrichment scoped to `platform == "steam"`; `POST /games` creates manual games with IDs allocated from 1,000,000,000+ so they can never collide with Steam AppIDs.
+- [x] **Story 16.2: RAWG Metadata Client** — `rawg_client.search_game(name)` fetches art + genres from RAWG (free API key, optional `RAWG_API_KEY` env var); manual games get auto-filled metadata on add when configured, letter-placeholder cards otherwise.
+- [x] **Story 16.3: Add Game UI** — "Add Game" form (name, platform select: Switch/PlayStation/Xbox/PC/Retro, attention level); platform badge on non-Steam cards; playtime row hidden for non-Steam games (no data source — stays 0, recommender treats as unplayed); platform filter in Library.
+- [x] **Story 16.4: Config & Docs** — `RAWG_API_KEY` through Compose; DEPLOY.md setup section.

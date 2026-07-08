@@ -18,6 +18,7 @@ from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
+from src.rawg_client import search_game
 
 # Global recommender instance
 recommender = None
@@ -134,6 +135,16 @@ class ImportPreviewResponse(BaseModel):
     duplicate_rows: int
     duplicate_app_ids: List[int] = []
 
+# Steam AppIDs are far below this; manual/non-Steam games are allocated ids
+# from this floor upward, so collisions with Steam sync/CSV import are impossible.
+MANUAL_ID_FLOOR = 1_000_000_000
+
+class ManualGameCreate(BaseModel):
+    name: str
+    platform: str
+    genre: Optional[str] = None
+    attention_level: Optional[AttentionLevel] = None
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to GameButler API! Visit /docs for API documentation."}
@@ -147,6 +158,7 @@ async def list_games(
     status: Optional[GameStatus] = None,
     attention_level: Optional[AttentionLevel] = None,
     search: Optional[str] = None,
+    platform: Optional[str] = None,
     session: Session = Depends(get_session)
 ):
     query = select(Game)
@@ -156,11 +168,63 @@ async def list_games(
         query = query.where(Game.attention_level == attention_level)
     if search:
         query = query.where(col(Game.name).contains(search))
+    if platform:
+        query = query.where(Game.platform == platform)
         
     results = session.exec(query).all()
     if status == GameStatus.UP_NEXT:
         results = sorted(results, key=lambda game: (game.queue_position is None, game.queue_position or 0, game.name.lower()))
     return results
+
+@app.post("/games", response_model=Game)
+async def create_game(payload: ManualGameCreate, session: Session = Depends(get_session)):
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    if payload.platform == "steam":
+        raise HTTPException(status_code=400, detail="Steam games come from sync/CSV import")
+
+    duplicate = session.exec(
+        select(Game).where(
+            Game.platform == payload.platform,
+            col(Game.name).ilike(payload.name.strip()),
+        )
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=400, detail=f"'{duplicate.name}' is already in your library")
+
+    existing_ids = session.exec(
+        select(Game.id).where(Game.id >= MANUAL_ID_FLOOR)
+    ).all()
+    next_id = max(existing_ids, default=MANUAL_ID_FLOOR - 1) + 1
+
+    rawg = await search_game(payload.name)
+
+    genre = payload.genre
+    header_image = None
+    if rawg:
+        header_image = rawg.get("header_image")
+        if not genre and rawg.get("genres"):
+            genre = ";".join(rawg["genres"])
+
+    game = Game(
+        id=next_id,
+        name=payload.name.strip(),
+        platform=payload.platform,
+        genre=genre or "Unknown",
+        tags="Unknown",
+        playtime_forever=0,
+        status=GameStatus.LIBRARY,
+        attention_level=payload.attention_level or AttentionLevel.UNSET,
+        header_image=header_image,
+    )
+    if payload.attention_level is None:
+        apply_attention_heuristics(game)
+
+    session.add(game)
+    session.commit()
+    session.refresh(game)
+    sync_recommender_with_db()
+    return game
 
 @app.put("/games/queue", response_model=List[Game])
 async def reorder_queue(
@@ -242,7 +306,8 @@ async def auto_tag_games(session: Session = Depends(get_session)):
 
 def enrichment_candidates_query(limit: int):
     return select(Game).where(
-        (Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None)  # noqa: E711
+        ((Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None))  # noqa: E711
+        & (Game.platform == "steam")
     ).limit(limit)
 
 async def process_enrichment(job_id: int, limit: int):
@@ -564,7 +629,8 @@ async def run_steam_sync(session: Session) -> dict:
                 genre="Unknown",
                 tags="Unknown",
                 status=GameStatus.LIBRARY,
-                attention_level=AttentionLevel.UNSET
+                attention_level=AttentionLevel.UNSET,
+                platform="steam"
             )
             apply_attention_heuristics(game)
             session.add(game)

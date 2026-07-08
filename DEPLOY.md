@@ -75,6 +75,16 @@ SYNC_INTERVAL_HOURS=0    # disable auto-sync (manual button still works)
 
 Auto-sync keeps the activity feed's playtime history accurate without needing to click Sync Steam.
 
+## Non-Steam Games (optional)
+
+Games added manually (Switch, PlayStation, etc.) can get art and genres automatically via [RAWG](https://rawg.io/apidocs) — grab a free API key and add it to the same `.env` file:
+
+```
+RAWG_API_KEY=XXXXXXXX
+```
+
+Without the key, manual games still work — they just use placeholder cards until you add art another way.
+
 ## Health Check
 
 After the containers start, verify the local deployment:

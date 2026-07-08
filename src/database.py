@@ -61,6 +61,8 @@ def add_game_rich_metadata_columns(connection):
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN header_image TEXT")
     if "short_description" not in columns:
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN short_description TEXT")
+    if "platform" not in columns:
+        connection.exec_driver_sql("ALTER TABLE game ADD COLUMN platform TEXT NOT NULL DEFAULT 'steam'")
 
 def add_game_queue_position_column(connection):
     tables = {
