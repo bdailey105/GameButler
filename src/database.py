@@ -103,11 +103,26 @@ def add_game_queue_position_column(connection):
             (position, app_id),
         )
 
+def add_game_average_playtime_column(connection):
+    tables = {
+        row[0]
+        for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if "game" not in tables:
+        return
+
+    columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+    if "average_playtime" not in columns:
+        connection.exec_driver_sql("ALTER TABLE game ADD COLUMN average_playtime INTEGER")
+
 MIGRATIONS = (
     ("20260706_001_game_rich_metadata", add_game_rich_metadata_columns),
     ("20260706_002_game_queue_position", add_game_queue_position_column),
     # New columns need NEW migration ids — already-applied migrations never re-run
     ("20260708_003_game_platform", add_game_platform_column),
+    ("20260708_004_game_average_playtime", add_game_average_playtime_column),
 )
 
 def get_session() -> Generator[Session, None, None]:

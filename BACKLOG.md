@@ -99,3 +99,20 @@
 - [x] **Story 16.2: Art Lookup Client** — `steamgriddb_client.search_game(name)` fetches header art from SteamGridDB (key via Steam login, optional `STEAMGRIDDB_API_KEY` env var); manual games get auto-filled art on add when configured, letter-placeholder cards otherwise. (Was RAWG; swapped — RAWG signup is broken.)
 - [x] **Story 16.3: Add Game UI** — "Add Game" form (name, platform select: Switch/PlayStation/Xbox/PC/Retro, attention level); platform badge on non-Steam cards; playtime row hidden for non-Steam games (no data source — stays 0, recommender treats as unplayed); platform filter in Library.
 - [x] **Story 16.4: Config & Docs** — `STEAMGRIDDB_API_KEY` through Compose; DEPLOY.md setup section.
+
+## Epic 17: Game Management
+**Goal:** Remove and fix up games without touching the database by hand.
+- [x] **Story 17.1: Delete Endpoint** — `DELETE /games/{id}` removes the game and its play events.
+- [x] **Story 17.2: Library Card Actions** — ✕ remove (with confirm) on all library cards; ✎ genre edit on non-Steam cards.
+
+## Epic 18: Infra Hardening
+**Goal:** Stop the container bit-rot that caused two production incidents.
+- [x] **Story 18.1: Python 3.12** — Backend image and CI bumped from EOL 3.9.
+- [x] **Story 18.2: Pinned Requirements** — Exact versions in requirements.txt (previously unpinned, resolved differently per build).
+- [x] **Story 18.3: Steam 429 Backoff** — fetch_game_details retries once after 30s on rate limit.
+
+## Epic 19: HowLongToBeat
+**Goal:** Real time-to-beat data so length filters mean something.
+- [x] **Story 19.1: HLTB Client & Column** — `average_playtime` column (migration 004); `hltb_client.fetch_time_to_beat` via howlongtobeatpy (0 = looked up, no data; NULL = not yet tried).
+- [x] **Story 19.2: Enrichment & Manual-Add Integration** — Enrichment backfills time-to-beat for Steam games; manual adds look it up at creation; recommender's length filter now uses it.
+- [x] **Story 19.3: Card Display** — "To beat: ~Xh" on game cards when known.

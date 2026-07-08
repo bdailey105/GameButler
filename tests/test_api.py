@@ -203,6 +203,7 @@ async def test_process_enrichment_persists_rich_metadata(client):
     }
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
         await process_enrichment(job_id=job_id, limit=1)
@@ -232,6 +233,7 @@ def test_enrich_endpoint_returns_job_and_current_progress(client):
         "short_description": "A short Steam description.",
     }
     with patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
         response = client.post("/games/enrich?limit=1")
@@ -420,6 +422,7 @@ async def test_process_enrichment_records_failures(client):
 
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
         await process_enrichment(job_id=job_id, limit=1)
@@ -444,6 +447,7 @@ async def test_process_enrichment_marks_delisted_terminal(client):
 
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value={})), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
         await process_enrichment(job_id=job_id, limit=1)
@@ -604,7 +608,7 @@ def test_enrichment_candidates_include_missing_art(client):
     with Session(engine) as session:
         session.add(Game(id=1, name="Missing Art", playtime_forever=0, genre="Action", tags="Indie", header_image=None))
         session.add(Game(id=2, name="Unknown Genre", playtime_forever=0, genre="Unknown", tags="Unknown"))
-        session.add(Game(id=3, name="Fully Enriched", playtime_forever=0, genre="Action", tags="Indie", header_image="https://example.com/header.jpg"))
+        session.add(Game(id=3, name="Fully Enriched", playtime_forever=0, genre="Action", tags="Indie", header_image="https://example.com/header.jpg", average_playtime=600))
         session.commit()
 
     with Session(engine) as session:
@@ -633,6 +637,7 @@ async def test_enrichment_preserves_known_genre(client):
     }
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
         await process_enrichment(job_id=job_id, limit=1)
@@ -642,6 +647,35 @@ async def test_enrichment_preserves_known_genre(client):
         assert game.genre == "Action"
         assert game.tags == "Indie"
         assert game.header_image == "http://img"
+
+@pytest.mark.asyncio
+async def test_enrichment_fills_time_to_beat(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1,
+            name="Game A",
+            playtime_forever=0,
+            genre="Action",
+            tags="Indie",
+            header_image="http://x",
+            average_playtime=None,
+        ))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value={})), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=720)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.average_playtime == 720
 
 def test_sync_interval_helper(monkeypatch):
     monkeypatch.setenv("STEAM_API_KEY", "test-key")
@@ -680,6 +714,7 @@ async def test_run_steam_sync_callable_directly(client):
 
 def test_create_manual_game(client):
     with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.sync_recommender_with_db"):
         response = client.post("/games", json={"name": "Zelda TOTK", "platform": "switch"})
 
@@ -692,6 +727,7 @@ def test_create_manual_game(client):
     first_id = data["id"]
 
     with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.sync_recommender_with_db"):
         response = client.post("/games", json={"name": "Another Game", "platform": "switch"})
 
@@ -706,6 +742,7 @@ def test_create_manual_game_rejects_bad_input(client):
     assert response.status_code == 400
 
     with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.sync_recommender_with_db"):
         assert client.post("/games", json={"name": "Hades", "platform": "switch"}).status_code == 200
         response = client.post("/games", json={"name": "hades", "platform": "switch"})
@@ -715,6 +752,7 @@ def test_create_manual_game_rejects_bad_input(client):
 def test_create_manual_game_uses_art_lookup(client):
     lookup_result = {"header_image": "http://img", "genres": ["Adventure", "RPG"]}
     with patch("src.api.search_game", new=AsyncMock(return_value=lookup_result)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.sync_recommender_with_db"):
         response = client.post("/games", json={"name": "Zelda TOTK", "platform": "switch"})
 
@@ -722,6 +760,15 @@ def test_create_manual_game_uses_art_lookup(client):
     data = response.json()
     assert data["genre"] == "Adventure;RPG"
     assert data["header_image"] == "http://img"
+
+def test_manual_game_gets_time_to_beat(client):
+    with patch("src.api.search_game", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=900)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/games", json={"name": "Hollow Knight", "platform": "switch"})
+
+    assert response.status_code == 200
+    assert response.json()["average_playtime"] == 900
 
 def test_enrichment_and_platform_filter_exclude_manual(client):
     with Session(engine) as session:

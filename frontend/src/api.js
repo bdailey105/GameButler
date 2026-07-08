@@ -21,6 +21,11 @@ export const updateGame = async (appId, updates) => {
   return response.data;
 };
 
+export const deleteGame = async (appId) => {
+  const response = await api.delete(`/games/${appId}`);
+  return response.data;
+};
+
 export const reorderQueue = async (appIds) => {
   const response = await api.put('/games/queue', { app_ids: appIds });
   return response.data;

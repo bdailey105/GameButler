@@ -119,10 +119,12 @@ def test_migrations_are_recorded_and_idempotent():
         ("20260706_001_game_rich_metadata",),
         ("20260706_002_game_queue_position",),
         ("20260708_003_game_platform",),
+        ("20260708_004_game_average_playtime",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
     assert "platform" in columns
+    assert "average_playtime" in columns
 
 def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     """Regression: adding a column to an already-applied migration never runs.

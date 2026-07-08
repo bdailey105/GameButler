@@ -26,6 +26,7 @@ class GameBase(SQLModel):
     attention_level: AttentionLevel = Field(default=AttentionLevel.UNSET)
     platform: str = Field(default="steam")
     queue_position: Optional[int] = None
+    average_playtime: Optional[int] = None  # minutes to beat (main story), None = not yet looked up, 0 = HLTB has no data
 
 class Game(GameBase, table=True):
     id: int = Field(default=None, primary_key=True)

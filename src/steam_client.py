@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import logging
 from typing import Optional, Dict, List
@@ -15,10 +16,15 @@ async def fetch_game_details(app_id: int) -> Optional[Dict]:
     try:
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(url, timeout=10.0)
-            
+
             if response.status_code == 429:
-                logger.warning(f"Rate limit hit for AppID {app_id}")
-                return None # Caller should handle backoff
+                # ponytail: single fixed backoff; honor Retry-After if this ever recurs
+                logger.warning(f"Rate limit hit for AppID {app_id}; backing off 30s")
+                await asyncio.sleep(30)
+                response = await client.get(url, timeout=10.0)
+                if response.status_code == 429:
+                    logger.warning(f"Still rate limited for AppID {app_id}")
+                    return None
                 
             response.raise_for_status()
             

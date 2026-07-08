@@ -19,6 +19,7 @@ from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJ
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamgriddb_client import search_game
+from src.hltb_client import fetch_time_to_beat
 
 # Global recommender instance
 recommender = None
@@ -40,10 +41,12 @@ def sync_recommender_with_db():
                 'name': 'Name',
                 'playtime_forever': 'Playtime_Forever',
                 'genre': 'Genre',
-                'tags': 'Tags'
+                'tags': 'Tags',
+                'average_playtime': 'Average_Playtime'
             })
             if 'Average_Playtime' not in df.columns:
                 df['Average_Playtime'] = 0
+            df['Average_Playtime'] = df['Average_Playtime'].fillna(0)
             
             recommender = GameRecommender(df)
             print(f"Recommender synced with DB. Total games: {len(df)}")
@@ -220,6 +223,8 @@ async def create_game(payload: ManualGameCreate, session: Session = Depends(get_
     if payload.attention_level is None:
         apply_attention_heuristics(game)
 
+    game.average_playtime = await fetch_time_to_beat(payload.name.strip())
+
     session.add(game)
     session.commit()
     session.refresh(game)
@@ -287,6 +292,20 @@ async def update_game(
     sync_recommender_with_db()
     return game
 
+@app.delete("/games/{app_id}")
+async def delete_game(app_id: int, session: Session = Depends(get_session)):
+    game = session.get(Game, app_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    events = session.exec(select(PlayEvent).where(PlayEvent.game_id == app_id)).all()
+    for event in events:
+        session.delete(event)
+    session.delete(game)
+    session.commit()
+    sync_recommender_with_db()
+    return {"message": f"Deleted {game.name}."}
+
 @app.post("/games/auto-tag")
 async def auto_tag_games(session: Session = Depends(get_session)):
     statement = select(Game).where(Game.attention_level == AttentionLevel.UNSET)
@@ -306,7 +325,7 @@ async def auto_tag_games(session: Session = Depends(get_session)):
 
 def enrichment_candidates_query(limit: int):
     return select(Game).where(
-        ((Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None))  # noqa: E711
+        ((Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None) | (Game.average_playtime == None))  # noqa: E711
         & (Game.platform == "steam")
     ).limit(limit)
 
@@ -359,6 +378,12 @@ async def process_enrichment(job_id: int, limit: int):
                     else:
                         job.failed += 1
                         job.error_summary = f"No Steam details for {game.id}"
+
+                    if game.average_playtime is None:
+                        ttb = await fetch_time_to_beat(game.name)
+                        if ttb is not None:
+                            game.average_playtime = ttb
+                            session.add(game)
 
                     # Respect rate limits
                     await asyncio.sleep(1.5)

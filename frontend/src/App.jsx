@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, addGame } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, addGame } from './api'
 import './App.css'
 
-function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] }) {
+function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre }) {
   const platformLabels = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
   const primaryTag = game.tags?.split(';')[0]
   const status = game.status || 'library'
@@ -25,6 +25,9 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] 
           {game.genre && <span className="badge">{game.genre}</span>}
           {primaryTag && <span className="badge secondary">{primaryTag}</span>}
           {game.platform && game.platform !== 'steam' && <span className="badge secondary">{platformLabels[game.platform] || game.platform}</span>}
+          {game.platform && game.platform !== 'steam' && onEditGenre && (
+            <button className="action-btn" title="Edit genre" onClick={() => onEditGenre(game)}>✎</button>
+          )}
         </div>
         {game.short_description && <p className="game-description">{game.short_description}</p>}
         
@@ -48,6 +51,9 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] 
           {(game.platform === 'steam' || game.playtime_forever > 0) && (
             <p><strong>Playtime:</strong> {game.playtime_forever} mins</p>
           )}
+          {game.average_playtime > 0 && (
+            <p><strong>To beat:</strong> ~{Math.round(game.average_playtime / 60)}h</p>
+          )}
         </div>
       </div>
       <div className="game-card-actions">
@@ -63,14 +69,17 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] 
           </button>
         ))}
         {actions.map(action => (
-          <button 
-            key={action.status} 
+          <button
+            key={action.status}
             className={`action-btn ${action.className || ''}`}
             onClick={() => onMove(game.id, action.status)}
           >
             {action.label}
           </button>
         ))}
+        {onDelete && (
+          <button className="action-btn danger" title="Remove from library" onClick={() => onDelete(game)}>✕</button>
+        )}
       </div>
     </div>
   )
@@ -422,6 +431,29 @@ function LibraryView({ onMove, onAttentionChange }) {
     setSearch(e.target.value)
   }
 
+  const handleDelete = async (game) => {
+    if (!window.confirm(`Remove ${game.name} from your library? This also deletes its activity history.`)) return
+    try {
+      await deleteGame(game.id)
+      loadLibrary()
+    } catch (err) {
+      console.error(err)
+      setAutoTagMsg(err.response?.data?.detail || 'Failed to remove game.')
+      setTimeout(() => setAutoTagMsg(''), 5000)
+    }
+  }
+
+  const handleEditGenre = async (game) => {
+    const genre = window.prompt(`Genre for ${game.name}:`, game.genre === 'Unknown' ? '' : game.genre)
+    if (genre === null) return
+    try {
+      await updateGame(game.id, { genre: genre.trim() || 'Unknown' })
+      loadLibrary()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
     <div className="view library-view">
       <section className="card library-header">
@@ -476,15 +508,17 @@ function LibraryView({ onMove, onAttentionChange }) {
       ) : (
         <div className="library-grid">
           {games.map(game => (
-            <GameCard 
-              key={game.id} 
-              game={game} 
+            <GameCard
+              key={game.id}
+              game={game}
               onMove={(id, status) => {
                 onMove(id, status)
                 setGames(games.filter(g => g.id !== id))
-              }} 
+              }}
               onAttentionChange={onAttentionChange}
-              actions={[{ label: 'Add to Up Next', status: 'up_next', className: 'primary' }]} 
+              actions={[{ label: 'Add to Up Next', status: 'up_next', className: 'primary' }]}
+              onDelete={handleDelete}
+              onEditGenre={handleEditGenre}
             />
           ))}
           {games.length === 0 && (

@@ -621,6 +621,8 @@ select:focus-visible {
 .action-btn.success:hover { background: var(--status-playing); color: white; }
 .action-btn.warning { color: var(--status-casual); }
 .action-btn.warning:hover { background: var(--status-casual); color: white; }
+.action-btn.danger { color: var(--status-error); }
+.action-btn.danger:hover { background: var(--status-error); color: white; }
 .action-btn:disabled {
   color: var(--text-muted);
   cursor: not-allowed;
