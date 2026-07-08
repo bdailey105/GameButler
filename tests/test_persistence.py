@@ -120,11 +120,13 @@ def test_migrations_are_recorded_and_idempotent():
         ("20260706_002_game_queue_position",),
         ("20260708_003_game_platform",),
         ("20260708_004_game_average_playtime",),
+        ("20260708_005_game_attention_source",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
     assert "platform" in columns
     assert "average_playtime" in columns
+    assert "attention_source" in columns
 
 def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     """Regression: adding a column to an already-applied migration never runs.
@@ -159,6 +161,36 @@ def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     assert "platform" in columns
     assert platform == "steam"
     assert "queue_position" in columns
+
+def test_attention_source_migration_backfills_manual():
+    """Existing categorizations made before attention_source existed are assumed
+    hand-set, so the backfill marks them 'manual' rather than risk overwriting
+    user intent by leaving them open to future auto-tag runs."""
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER, "
+            "attention_level TEXT NOT NULL DEFAULT 'unset')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever, attention_level) VALUES (1, 'Old Game', 42, 'casual')"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+        attention_source = connection.exec_driver_sql(
+            "SELECT attention_source FROM game WHERE id = 1"
+        ).scalar()
+
+    assert "attention_source" in columns
+    assert attention_source == "manual"
 
 def test_recommender_sync_logic(session: Session):
     # Add some games

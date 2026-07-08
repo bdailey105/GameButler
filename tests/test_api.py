@@ -95,6 +95,27 @@ def test_update_game(client):
         assert game.status == GameStatus.PLAYING
         assert game.attention_level == AttentionLevel.FOCUSED
 
+def test_update_game_marks_attention_manual(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/1", json={"attention_level": "focused"})
+    assert response.status_code == 200
+    assert response.json()["attention_source"] == "manual"
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.attention_source == "manual"
+
+    response = client.put("/games/1", json={"attention_level": "unset"})
+    assert response.status_code == 200
+    assert response.json()["attention_source"] is None
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.attention_source is None
+
 def test_queue_append_sort_and_reorder(client):
     with Session(engine) as session:
         session.add(Game(id=1, name="First", playtime_forever=0, status=GameStatus.LIBRARY))
@@ -203,6 +224,7 @@ async def test_process_enrichment_persists_rich_metadata(client):
     }
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_user_tags", new=AsyncMock(return_value=[])), \
          patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
@@ -221,6 +243,34 @@ async def test_process_enrichment_persists_rich_metadata(client):
         assert job.succeeded == 1
         assert job.failed == 0
 
+@pytest.mark.asyncio
+async def test_enrichment_stores_steamspy_tags(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    details = {
+        "genres": ["Action"],
+        "categories": ["Single-player"],
+        "header_image": "https://example.com/header.jpg",
+        "short_description": "A short Steam description.",
+    }
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_user_tags", new=AsyncMock(return_value=["Roguelike", "Story Rich"])), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.tags == "Roguelike;Story Rich"
+
 def test_enrich_endpoint_returns_job_and_current_progress(client):
     with Session(engine) as session:
         session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
@@ -233,6 +283,7 @@ def test_enrich_endpoint_returns_job_and_current_progress(client):
         "short_description": "A short Steam description.",
     }
     with patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_user_tags", new=AsyncMock(return_value=[])), \
          patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
@@ -637,6 +688,7 @@ async def test_enrichment_preserves_known_genre(client):
     }
     with patch("src.api.engine", engine), \
          patch("src.api.fetch_game_details", new=AsyncMock(return_value=details)), \
+         patch("src.api.fetch_user_tags", new=AsyncMock(return_value=[])), \
          patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
          patch("src.api.asyncio.sleep", new=AsyncMock()), \
          patch("src.api.sync_recommender_with_db"):
@@ -787,3 +839,36 @@ def test_enrichment_and_platform_filter_exclude_manual(client):
     data = response.json()
     assert len(data) == 1
     assert data[0]["id"] == 1_000_000_000
+
+def test_auto_tag_respects_manual_but_retags_auto(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1, name="Game A", playtime_forever=0, genre="Arcade",
+            attention_level=AttentionLevel.CASUAL, attention_source="manual",
+        ))
+        session.add(Game(
+            id=2, name="Game B", playtime_forever=0, genre="RPG",
+            attention_level=AttentionLevel.CASUAL, attention_source="auto",
+        ))
+        session.add(Game(
+            id=3, name="Game C", playtime_forever=0, genre="Puzzle",
+            attention_level=AttentionLevel.UNSET, attention_source=None,
+        ))
+        session.commit()
+
+    response = client.post("/games/auto-tag")
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        game_a = session.get(Game, 1)
+        game_b = session.get(Game, 2)
+        game_c = session.get(Game, 3)
+
+        assert game_a.attention_level == AttentionLevel.CASUAL
+        assert game_a.attention_source == "manual"
+
+        assert game_b.attention_level == AttentionLevel.FOCUSED
+        assert game_b.attention_source == "auto"
+
+        assert game_c.attention_level == AttentionLevel.CASUAL
+        assert game_c.attention_source == "auto"

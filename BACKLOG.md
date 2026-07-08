@@ -116,3 +116,9 @@
 - [x] **Story 19.1: HLTB Client & Column** — `average_playtime` column (migration 004); `hltb_client.fetch_time_to_beat` via howlongtobeatpy (0 = looked up, no data; NULL = not yet tried).
 - [x] **Story 19.2: Enrichment & Manual-Add Integration** — Enrichment backfills time-to-beat for Steam games; manual adds look it up at creation; recommender's length filter now uses it.
 - [x] **Story 19.3: Card Display** — "To beat: ~Xh" on game cards when known.
+
+## Epic 20: Smarter Auto-Tag
+**Goal:** Auto-tag that actually fires — real community tags plus a matcher that understands them.
+- [x] **Story 20.1: SteamSpy Community Tags** — Enrichment replaces Steam's feature categories with real user tags (top 10 by votes, steamspy.com, no key needed).
+- [x] **Story 20.2: Matcher Rewrite** — Normalized substring matching ("Action RPG" hits "rpg", "Story-Rich" hits "story rich") plus expanded attention keyword lists.
+- [x] **Story 20.3: Re-runnable Auto-Tag** — `attention_source` column (migration 005) distinguishes manual picks from auto guesses; Auto-Tag now re-evaluates auto/untagged games while never touching manual ones. Existing categorizations backfilled as manual (conservative).

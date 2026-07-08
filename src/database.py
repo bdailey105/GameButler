@@ -117,12 +117,34 @@ def add_game_average_playtime_column(connection):
     if "average_playtime" not in columns:
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN average_playtime INTEGER")
 
+def add_game_attention_source_column(connection):
+    tables = {
+        row[0]
+        for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if "game" not in tables:
+        return
+
+    columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+    if "attention_source" not in columns:
+        connection.exec_driver_sql("ALTER TABLE game ADD COLUMN attention_source TEXT")
+    if "attention_level" not in columns:
+        return
+    # Conservative backfill: existing non-unset categorizations might be hand-set,
+    # so treat them as manual rather than risk overwriting user intent later.
+    connection.exec_driver_sql(
+        "UPDATE game SET attention_source = 'manual' WHERE attention_level != 'unset' AND attention_source IS NULL"
+    )
+
 MIGRATIONS = (
     ("20260706_001_game_rich_metadata", add_game_rich_metadata_columns),
     ("20260706_002_game_queue_position", add_game_queue_position_column),
     # New columns need NEW migration ids — already-applied migrations never re-run
     ("20260708_003_game_platform", add_game_platform_column),
     ("20260708_004_game_average_playtime", add_game_average_playtime_column),
+    ("20260708_005_game_attention_source", add_game_attention_source_column),
 )
 
 def get_session() -> Generator[Session, None, None]:

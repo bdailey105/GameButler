@@ -10,7 +10,7 @@ import asyncio
 import tempfile
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
-from sqlmodel import Session, select, col
+from sqlmodel import Session, select, col, or_
 
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
@@ -18,6 +18,7 @@ from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
+from src.steamspy_client import fetch_user_tags
 from src.steamgriddb_client import search_game
 from src.hltb_client import fetch_time_to_beat
 
@@ -283,6 +284,9 @@ async def update_game(
             continue
         setattr(game, key, value)
 
+    if "attention_level" in game_data:
+        game.attention_source = None if game.attention_level == AttentionLevel.UNSET else "manual"
+
     if new_status and new_status != old_status:
         session.add(PlayEvent(game_id=game.id, event_type="status", old_value=old_status.value, new_value=new_status.value))
 
@@ -308,17 +312,22 @@ async def delete_game(app_id: int, session: Session = Depends(get_session)):
 
 @app.post("/games/auto-tag")
 async def auto_tag_games(session: Session = Depends(get_session)):
-    statement = select(Game).where(Game.attention_level == AttentionLevel.UNSET)
+    # Manual overrides are permanent; everything else (never tagged, or previously
+    # auto-tagged) is fair game for re-running the heuristics.
+    statement = select(Game).where(
+        or_(col(Game.attention_source) != "manual", col(Game.attention_source).is_(None))
+    )
     games = session.exec(statement).all()
-    
+
     count = 0
     for game in games:
         original_level = game.attention_level
+        game.attention_level = AttentionLevel.UNSET
         apply_attention_heuristics(game)
-        if game.attention_level != original_level:
+        if game.attention_level != AttentionLevel.UNSET and game.attention_level != original_level:
             session.add(game)
             count += 1
-            
+
     session.commit()
     sync_recommender_with_db()
     return {"message": f"Successfully auto-tagged {count} games."}
@@ -360,6 +369,10 @@ async def process_enrichment(job_id: int, limit: int):
                         # "" = checked, Steam has no art (keeps game out of future candidate runs)
                         game.header_image = details.get("header_image") or game.header_image or ""
                         game.short_description = details.get("short_description") or game.short_description
+
+                        user_tags = await fetch_user_tags(game.id)
+                        if user_tags:
+                            game.tags = ";".join(user_tags)
 
                         session.add(game)
                         job.succeeded += 1

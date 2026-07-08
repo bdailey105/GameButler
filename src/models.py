@@ -24,6 +24,7 @@ class GameBase(SQLModel):
     short_description: Optional[str] = None
     status: GameStatus = Field(default=GameStatus.LIBRARY)
     attention_level: AttentionLevel = Field(default=AttentionLevel.UNSET)
+    attention_source: Optional[str] = None  # "manual" | "auto" | None (never tagged)
     platform: str = Field(default="steam")
     queue_position: Optional[int] = None
     average_playtime: Optional[int] = None  # minutes to beat (main story), None = not yet looked up, 0 = HLTB has no data
