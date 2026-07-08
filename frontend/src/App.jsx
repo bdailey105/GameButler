@@ -515,7 +515,10 @@ function LibraryView({ onMove, onAttentionChange }) {
                 onMove(id, status)
                 setGames(games.filter(g => g.id !== id))
               }}
-              onAttentionChange={onAttentionChange}
+              onAttentionChange={async (id, level) => {
+                const updated = await onAttentionChange(id, level)
+                if (updated) setGames(prev => prev.map(g => g.id === id ? updated : g))
+              }}
               actions={[{ label: 'Add to Up Next', status: 'up_next', className: 'primary' }]}
               onDelete={handleDelete}
               onEditGenre={handleEditGenre}
@@ -606,7 +609,10 @@ function BacklogView({ onMove, onAttentionChange }) {
                       key={game.id}
                       game={game}
                       onMove={moveAndRefresh}
-                      onAttentionChange={onAttentionChange}
+                      onAttentionChange={async (id, level) => {
+                        const updated = await onAttentionChange(id, level)
+                        if (updated) setGames(prev => prev.map(g => g.id === id ? updated : g))
+                      }}
                       queueActions={column.key === 'up_next' ? [
                         {
                           label: '↑',
@@ -821,15 +827,15 @@ function App() {
     try {
       const updated = await updateGame(appId, { attention_level })
       // Update local state to reflect change
-      if (currentView === 'dashboard') {
-        setDashboardGames(dashboardGames.map(g => g.id === appId ? updated : g))
-      }
+      setDashboardGames(prev => prev.map(g => g.id === appId ? updated : g))
       // If we are in concierge, and the recommendation matches, update it
       if (recommendation && recommendation.AppID === appId) {
         setRecommendation({ ...recommendation, attention_level })
       }
+      return updated
     } catch (err) {
       console.error('Failed to update attention:', err)
+      return null
     }
   }
 
