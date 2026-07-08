@@ -712,9 +712,9 @@ def test_create_manual_game_rejects_bad_input(client):
     assert response.status_code == 400
     assert "already in your library" in response.json()["detail"]
 
-def test_create_manual_game_uses_rawg(client):
-    rawg_result = {"header_image": "http://img", "genres": ["Adventure", "RPG"]}
-    with patch("src.api.search_game", new=AsyncMock(return_value=rawg_result)), \
+def test_create_manual_game_uses_art_lookup(client):
+    lookup_result = {"header_image": "http://img", "genres": ["Adventure", "RPG"]}
+    with patch("src.api.search_game", new=AsyncMock(return_value=lookup_result)), \
          patch("src.api.sync_recommender_with_db"):
         response = client.post("/games", json={"name": "Zelda TOTK", "platform": "switch"})
 

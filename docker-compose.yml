@@ -11,7 +11,7 @@ services:
       - STEAM_API_KEY=${STEAM_API_KEY:-}
       - STEAM_ID=${STEAM_ID:-}
       - SYNC_INTERVAL_HOURS=${SYNC_INTERVAL_HOURS:-24}
-      - RAWG_API_KEY=${RAWG_API_KEY:-}
+      - STEAMGRIDDB_API_KEY=${STEAMGRIDDB_API_KEY:-}
     restart: always
 
   frontend:

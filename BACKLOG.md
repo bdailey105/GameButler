@@ -96,6 +96,6 @@
 ## Epic 16: Multi-Platform Library (Nintendo & Beyond)
 **Goal:** Track non-Steam games — primarily Switch — alongside the Steam library.
 - [x] **Story 16.1: Platform Foundation** — `platform` column on Game (default `steam`, ALTER TABLE migration); Steam sync and enrichment scoped to `platform == "steam"`; `POST /games` creates manual games with IDs allocated from 1,000,000,000+ so they can never collide with Steam AppIDs.
-- [x] **Story 16.2: RAWG Metadata Client** — `rawg_client.search_game(name)` fetches art + genres from RAWG (free API key, optional `RAWG_API_KEY` env var); manual games get auto-filled metadata on add when configured, letter-placeholder cards otherwise.
+- [x] **Story 16.2: Art Lookup Client** — `steamgriddb_client.search_game(name)` fetches header art from SteamGridDB (key via Steam login, optional `STEAMGRIDDB_API_KEY` env var); manual games get auto-filled art on add when configured, letter-placeholder cards otherwise. (Was RAWG; swapped — RAWG signup is broken.)
 - [x] **Story 16.3: Add Game UI** — "Add Game" form (name, platform select: Switch/PlayStation/Xbox/PC/Retro, attention level); platform badge on non-Steam cards; playtime row hidden for non-Steam games (no data source — stays 0, recommender treats as unplayed); platform filter in Library.
-- [x] **Story 16.4: Config & Docs** — `RAWG_API_KEY` through Compose; DEPLOY.md setup section.
+- [x] **Story 16.4: Config & Docs** — `STEAMGRIDDB_API_KEY` through Compose; DEPLOY.md setup section.

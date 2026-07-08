@@ -18,7 +18,7 @@ from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
-from src.rawg_client import search_game
+from src.steamgriddb_client import search_game
 
 # Global recommender instance
 recommender = None
@@ -197,14 +197,14 @@ async def create_game(payload: ManualGameCreate, session: Session = Depends(get_
     ).all()
     next_id = max(existing_ids, default=MANUAL_ID_FLOOR - 1) + 1
 
-    rawg = await search_game(payload.name)
+    lookup = await search_game(payload.name)
 
     genre = payload.genre
     header_image = None
-    if rawg:
-        header_image = rawg.get("header_image")
-        if not genre and rawg.get("genres"):
-            genre = ";".join(rawg["genres"])
+    if lookup:
+        header_image = lookup.get("header_image")
+        if not genre and lookup.get("genres"):
+            genre = ";".join(lookup["genres"])
 
     game = Game(
         id=next_id,

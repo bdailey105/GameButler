@@ -77,13 +77,13 @@ Auto-sync keeps the activity feed's playtime history accurate without needing to
 
 ## Non-Steam Games (optional)
 
-Games added manually (Switch, PlayStation, etc.) can get art and genres automatically via [RAWG](https://rawg.io/apidocs) — grab a free API key and add it to the same `.env` file:
+Games added manually (Switch, PlayStation, etc.) can get art automatically via [SteamGridDB](https://www.steamgriddb.com) — log in with your Steam account, generate an API key under Preferences → API, and add it to the same `.env` file:
 
 ```
-RAWG_API_KEY=XXXXXXXX
+STEAMGRIDDB_API_KEY=XXXXXXXX
 ```
 
-Without the key, manual games still work — they just use placeholder cards until you add art another way.
+Without the key, manual games still work — they just use placeholder cards until you add art another way. SteamGridDB is art-only, so genres stay "Unknown" unless you set them.
 
 ## Health Check
 
