@@ -74,3 +74,9 @@
 - [x] **Story 12.1: Steam Owned-Games Client & Sync Endpoint** — `fetch_owned_games` via IPlayerService/GetOwnedGames; `POST /sync/steam` upserts playtime/new games while preserving status, attention level, and enrichment data.
 - [x] **Story 12.2: Sync Button in Library UI** — One-click "Sync Steam" in the library toolbar with success/error feedback.
 - [x] **Story 12.3: Configuration & Docs** — `STEAM_API_KEY` / `STEAM_ID` env vars wired through Docker Compose and documented in DEPLOY.md.
+
+## Epic 13: Play Habit Tracking
+**Goal:** Track gaming habits — status changes and playtime over time (PRD 1.1).
+- [x] **Story 13.1: Play Event Log** — `PlayEvent` table; status transitions and Steam-sync playtime deltas logged automatically.
+- [x] **Story 13.2: Activity Stats Endpoint** — `GET /stats/activity`: hours this week, started/finished this month, recent event feed.
+- [x] **Story 13.3: Dashboard Activity Panel** — Third dashboard column with stat badges and recent-activity feed.

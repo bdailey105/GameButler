@@ -3,12 +3,12 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from unittest.mock import AsyncMock, patch
 
 # Test Database - In Memory with StaticPool to share connection across threads
@@ -488,3 +488,85 @@ def test_steam_sync_handles_steam_failure(client, monkeypatch):
         response = client.post("/sync/steam")
 
     assert response.status_code == 502
+
+def test_status_change_logs_play_event(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/1", json={"status": "playing"})
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+        assert events[0].event_type == "status"
+        assert events[0].old_value == "library"
+        assert events[0].new_value == "playing"
+
+    # Same status again -> no additional event
+    response = client.put("/games/1", json={"status": "playing"})
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+
+def test_steam_sync_logs_playtime_delta(client, monkeypatch):
+    monkeypatch.setenv("STEAM_API_KEY", "test-key")
+    monkeypatch.setenv("STEAM_ID", "test-steam-id")
+
+    with Session(engine) as session:
+        session.add(Game(id=10, name="Old Game", playtime_forever=100, status=GameStatus.PLAYING))
+        session.add(Game(id=30, name="Unchanged Game", playtime_forever=50, status=GameStatus.LIBRARY))
+        session.commit()
+
+    owned_games = [
+        {"appid": 10, "name": "Old Game", "playtime_forever": 250},
+        {"appid": 20, "name": "New Game", "playtime_forever": 0},
+        {"appid": 30, "name": "Unchanged Game", "playtime_forever": 50},
+    ]
+    with patch("src.api.fetch_owned_games", new=AsyncMock(return_value=owned_games)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/sync/steam")
+
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+        assert events[0].game_id == 10
+        assert events[0].event_type == "playtime"
+        assert events[0].old_value == "100"
+        assert events[0].new_value == "250"
+
+def test_activity_stats_endpoint(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=120))
+        session.commit()
+
+        now = datetime.now(timezone.utc)
+        session.add(PlayEvent(
+            game_id=1, event_type="playtime", old_value="0", new_value="120",
+            created_at=now,
+        ))
+        session.add(PlayEvent(
+            game_id=1, event_type="status", old_value="playing", new_value="completed",
+            created_at=now,
+        ))
+        session.add(PlayEvent(
+            game_id=1, event_type="playtime", old_value="0", new_value="60",
+            created_at=now - timedelta(days=10),
+        ))
+        session.commit()
+
+    response = client.get("/stats/activity")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["minutes_this_week"] == 120
+    assert data["finished_this_month"] == 1
+    assert len(data["events"]) == 3
+    assert data["events"][0]["game_name"] == "Game A"
+    # newest-first
+    timestamps = [event["created_at"] for event in data["events"]]
+    assert timestamps == sorted(timestamps, reverse=True)

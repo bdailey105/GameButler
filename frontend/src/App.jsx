@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary } from './api'
+import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] }) {
@@ -205,6 +205,12 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
 }
 
 function DashboardView({ games, onMove, onAttentionChange }) {
+  const [activity, setActivity] = useState(null)
+
+  useEffect(() => {
+    fetchActivity().then(setActivity).catch(() => {})
+  }, [])
+
   const playing = games.filter(g => g.status === 'playing')
   const upNext = games
     .filter(g => g.status === 'up_next')
@@ -238,21 +244,54 @@ function DashboardView({ games, onMove, onAttentionChange }) {
           <h2>Up Next</h2>
           <div className="game-list">
             {upNext.map(game => (
-              <GameCard 
-                key={game.id} 
-                game={game} 
-                onMove={onMove} 
+              <GameCard
+                key={game.id}
+                game={game}
+                onMove={onMove}
                 onAttentionChange={onAttentionChange}
                 actions={[
                   { label: 'Start Playing', status: 'playing', className: 'primary' },
                   { label: 'Remove', status: 'library', className: 'secondary' }
-                ]} 
+                ]}
               />
             ))}
             {upNext.length === 0 && (
               <EmptyState title="Queue is empty" message="Add games from the Library to build your next few sessions." />
             )}
           </div>
+        </section>
+
+        <section className="dashboard-column">
+          <h2>Recent Activity</h2>
+          {activity ? (
+            <>
+              <div className="game-meta">
+                <span className="badge">🕐 {(activity.minutes_this_week / 60).toFixed(1)}h this week</span>
+                <span className="badge secondary">▶ {activity.started_this_month} started</span>
+                <span className="badge secondary">✔ {activity.finished_this_month} finished</span>
+              </div>
+              {activity.events.length === 0 ? (
+                <EmptyState title="No activity yet" message="Play, finish, or sync games to build your history." />
+              ) : (
+                <ul className="activity-list">
+                  {activity.events.map(ev => (
+                    <li key={ev.id ?? `${ev.game_id}-${ev.created_at}`} className="activity-item">
+                      <strong>{ev.game_name}</strong>{' '}
+                      {ev.event_type === 'playtime'
+                        ? `+${((ev.new_value - ev.old_value) / 60).toFixed(1)}h played`
+                        : ev.new_value === 'playing' ? 'started'
+                        : ev.new_value === 'completed' ? 'finished'
+                        : ev.new_value === 'abandoned' ? 'abandoned'
+                        : `moved to ${ev.new_value.replace('_', ' ')}`}
+                      <span className="activity-date"> · {new Date(ev.created_at).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <EmptyState title="No activity yet" message="Play, finish, or sync games to build your history." />
+          )}
         </section>
       </div>
     </div>

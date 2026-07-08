@@ -69,4 +69,9 @@ export const syncSteamLibrary = async () => {
   return response.data;
 };
 
+export const fetchActivity = async () => {
+  const response = await api.get('/stats/activity');
+  return response.data;
+};
+
 export default api;

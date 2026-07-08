@@ -9,13 +9,13 @@ import pandas as pd
 import asyncio
 import tempfile
 from typing import Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select, col
 
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 
@@ -197,11 +197,16 @@ async def update_game(
     elif new_status and new_status != GameStatus.UP_NEXT:
         game.queue_position = None
 
+    old_status = game.status
+
     for key, value in game_data.items():
         if key == "queue_position":
             continue
         setattr(game, key, value)
-        
+
+    if new_status and new_status != old_status:
+        session.add(PlayEvent(game_id=game.id, event_type="status", old_value=old_status.value, new_value=new_status.value))
+
     session.add(game)
     session.commit()
     session.refresh(game)
@@ -342,6 +347,60 @@ async def get_enrichment_job(job_id: int, session: Session = Depends(get_session
         raise HTTPException(status_code=404, detail="Enrichment job not found")
     return job
 
+def as_naive_utc(dt: datetime) -> datetime:
+    """Datetimes round-trip through SQLite as naive UTC; normalize aware values too."""
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+@app.get("/stats/activity")
+async def activity_stats(limit: int = 20, session: Session = Depends(get_session)):
+    week_ago = as_naive_utc(utc_now() - timedelta(days=7))
+    month_ago = as_naive_utc(utc_now() - timedelta(days=30))
+
+    playtime_events = session.exec(
+        select(PlayEvent).where(PlayEvent.event_type == "playtime")
+    ).all()
+    minutes_this_week = sum(
+        int(event.new_value) - int(event.old_value)
+        for event in playtime_events
+        if as_naive_utc(event.created_at) >= week_ago
+    )
+
+    status_events = session.exec(
+        select(PlayEvent).where(PlayEvent.event_type == "status")
+    ).all()
+    started_this_month = sum(
+        1 for event in status_events
+        if event.new_value == "playing" and as_naive_utc(event.created_at) >= month_ago
+    )
+    finished_this_month = sum(
+        1 for event in status_events
+        if event.new_value == "completed" and as_naive_utc(event.created_at) >= month_ago
+    )
+
+    recent_events = session.exec(
+        select(PlayEvent).order_by(PlayEvent.created_at.desc()).limit(limit)
+    ).all()
+    events = []
+    for event in recent_events:
+        game = session.get(Game, event.game_id)
+        events.append({
+            "id": event.id,
+            "game_id": event.game_id,
+            "game_name": game.name if game else None,
+            "event_type": event.event_type,
+            "old_value": event.old_value,
+            "new_value": event.new_value,
+            # stored naive UTC; mark aware so clients parse it as UTC, not local
+            "created_at": event.created_at.replace(tzinfo=timezone.utc) if event.created_at.tzinfo is None else event.created_at,
+        })
+
+    return {
+        "minutes_this_week": minutes_this_week,
+        "started_this_month": started_this_month,
+        "finished_this_month": finished_this_month,
+        "events": events,
+    }
+
 def preview_import(df: pd.DataFrame, session: Session, filename: str) -> ImportPreviewResponse:
     app_ids = [int(app_id) for app_id in df["AppID"]]
     duplicate_app_ids = sorted({app_id for app_id in app_ids if app_ids.count(app_id) > 1})
@@ -467,7 +526,12 @@ async def sync_steam_library(session: Session = Depends(get_session)):
         if existing:
             # Steam omits/blanks names for some delisted apps; keep the old one
             existing.name = g.get("name") or existing.name
-            existing.playtime_forever = g.get("playtime_forever", 0)
+            old_playtime = existing.playtime_forever
+            new_playtime = g.get("playtime_forever", 0)
+            existing.playtime_forever = new_playtime
+            # Only increases count as play sessions; decreases (stat resets) are anomalies
+            if new_playtime > old_playtime:
+                session.add(PlayEvent(game_id=existing.id, event_type="playtime", old_value=str(old_playtime), new_value=str(new_playtime)))
             session.add(existing)
             updated += 1
         else:
