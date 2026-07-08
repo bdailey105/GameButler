@@ -61,6 +61,18 @@ def add_game_rich_metadata_columns(connection):
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN header_image TEXT")
     if "short_description" not in columns:
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN short_description TEXT")
+
+def add_game_platform_column(connection):
+    tables = {
+        row[0]
+        for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if "game" not in tables:
+        return
+
+    columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
     if "platform" not in columns:
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN platform TEXT NOT NULL DEFAULT 'steam'")
 
@@ -94,6 +106,8 @@ def add_game_queue_position_column(connection):
 MIGRATIONS = (
     ("20260706_001_game_rich_metadata", add_game_rich_metadata_columns),
     ("20260706_002_game_queue_position", add_game_queue_position_column),
+    # New columns need NEW migration ids — already-applied migrations never re-run
+    ("20260708_003_game_platform", add_game_platform_column),
 )
 
 def get_session() -> Generator[Session, None, None]:

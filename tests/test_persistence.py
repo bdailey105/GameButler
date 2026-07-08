@@ -118,9 +118,44 @@ def test_migrations_are_recorded_and_idempotent():
     assert migrations == [
         ("20260706_001_game_rich_metadata",),
         ("20260706_002_game_queue_position",),
+        ("20260708_003_game_platform",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
+    assert "platform" in columns
+
+def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
+    """Regression: adding a column to an already-applied migration never runs.
+    Simulates a production DB where 001/002 are recorded but platform is missing."""
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER, "
+            "header_image TEXT, short_description TEXT, queue_position INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO schema_migrations (id) VALUES ('20260706_001_game_rich_metadata'), ('20260706_002_game_queue_position')"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever) VALUES (1, 'Existing Game', 42)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+        platform = connection.exec_driver_sql("SELECT platform FROM game WHERE id = 1").scalar()
+
+    assert "platform" in columns
+    assert platform == "steam"
     assert "queue_position" in columns
 
 def test_recommender_sync_logic(session: Session):
