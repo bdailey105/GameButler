@@ -7,6 +7,9 @@ services:
       - "8001:8000" # Changed host port to 8001 to avoid conflict
     volumes:
       - ./data:/app/data # Persist data
+    environment:
+      - STEAM_API_KEY=${STEAM_API_KEY:-}
+      - STEAM_ID=${STEAM_ID:-}
     restart: always
 
   frontend:

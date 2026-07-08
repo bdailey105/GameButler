@@ -17,7 +17,7 @@ from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder
 from src.logic import apply_attention_heuristics
-from src.steam_client import fetch_game_details
+from src.steam_client import fetch_game_details, fetch_owned_games
 
 # Global recommender instance
 recommender = None
@@ -444,6 +444,54 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
+
+@app.post("/sync/steam")
+async def sync_steam_library(session: Session = Depends(get_session)):
+    api_key = os.getenv("STEAM_API_KEY")
+    steam_id = os.getenv("STEAM_ID")
+    if not api_key or not steam_id:
+        raise HTTPException(status_code=503, detail="Steam sync not configured. Set STEAM_API_KEY and STEAM_ID environment variables.")
+
+    games = await fetch_owned_games(api_key, steam_id)
+    if games is None:
+        raise HTTPException(status_code=502, detail="Steam API returned no data. Check your Steam ID and that your profile's game details are public.")
+
+    added = 0
+    updated = 0
+
+    for g in games:
+        appid = g.get("appid")
+        if not appid:
+            continue
+        existing = session.get(Game, appid)
+        if existing:
+            # Steam omits/blanks names for some delisted apps; keep the old one
+            existing.name = g.get("name") or existing.name
+            existing.playtime_forever = g.get("playtime_forever", 0)
+            session.add(existing)
+            updated += 1
+        else:
+            game = Game(
+                id=appid,
+                name=g.get("name") or f"App {appid}",
+                playtime_forever=g.get("playtime_forever", 0),
+                genre="Unknown",
+                tags="Unknown",
+                status=GameStatus.LIBRARY,
+                attention_level=AttentionLevel.UNSET
+            )
+            apply_attention_heuristics(game)
+            session.add(game)
+            added += 1
+
+    session.commit()
+    sync_recommender_with_db()
+    return {
+        "added": added,
+        "updated": updated,
+        "total": len(games),
+        "message": f"Steam sync complete: {added} added, {updated} updated.",
+    }
 
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(

@@ -68,3 +68,9 @@
 - [x] **Story 11.1: One-command Local Bootstrap** — Added `make setup`, `make verify`, and local deployment commands.
 - [x] **Story 11.2: Local Health Check Script** — Added `make health` to verify frontend, backend, DB file, and `/api/health` after `docker compose up`.
 - [x] **Story 11.3: Backup/Restore Workflow** — Added `make backup`, `make restore BACKUP=...`, and deployment docs for SQLite recovery.
+
+## Epic 12: Direct Steam Sync
+**Goal:** Pull the library straight from the Steam Web API — no manual CSV export.
+- [x] **Story 12.1: Steam Owned-Games Client & Sync Endpoint** — `fetch_owned_games` via IPlayerService/GetOwnedGames; `POST /sync/steam` upserts playtime/new games while preserving status, attention level, and enrichment data.
+- [x] **Story 12.2: Sync Button in Library UI** — One-click "Sync Steam" in the library toolbar with success/error feedback.
+- [x] **Story 12.3: Configuration & Docs** — `STEAM_API_KEY` / `STEAM_ID` env vars wired through Docker Compose and documented in DEPLOY.md.

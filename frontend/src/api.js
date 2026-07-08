@@ -64,4 +64,9 @@ export const fetchCurrentEnrichmentJob = async () => {
   return response.data;
 };
 
+export const syncSteamLibrary = async () => {
+  const response = await api.post('/sync/steam');
+  return response.data;
+};
+
 export default api;

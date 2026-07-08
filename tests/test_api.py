@@ -430,3 +430,61 @@ async def test_process_enrichment_records_failures(client):
         assert job.succeeded == 0
         assert job.failed == 1
         assert "No Steam details" in job.error_summary
+
+def test_steam_sync_requires_config(client, monkeypatch):
+    monkeypatch.delenv("STEAM_API_KEY", raising=False)
+    monkeypatch.delenv("STEAM_ID", raising=False)
+
+    response = client.post("/sync/steam")
+
+    assert response.status_code == 503
+
+def test_steam_sync_upserts_and_preserves_user_state(client, monkeypatch):
+    monkeypatch.setenv("STEAM_API_KEY", "test-key")
+    monkeypatch.setenv("STEAM_ID", "test-steam-id")
+
+    with Session(engine) as session:
+        session.add(Game(
+            id=10,
+            name="Old Game",
+            playtime_forever=100,
+            status=GameStatus.PLAYING,
+            attention_level=AttentionLevel.FOCUSED,
+            header_image="http://x/img.jpg",
+        ))
+        session.commit()
+
+    owned_games = [
+        {"appid": 10, "name": "Old Game", "playtime_forever": 200},
+        {"appid": 20, "name": "New Game", "playtime_forever": 0},
+    ]
+    with patch("src.api.fetch_owned_games", new=AsyncMock(return_value=owned_games)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/sync/steam")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["added"] == 1
+    assert data["updated"] == 1
+    assert data["total"] == 2
+
+    with Session(engine) as session:
+        game_10 = session.get(Game, 10)
+        assert game_10.playtime_forever == 200
+        assert game_10.status == GameStatus.PLAYING
+        assert game_10.attention_level == AttentionLevel.FOCUSED
+        assert game_10.header_image == "http://x/img.jpg"
+
+        game_20 = session.get(Game, 20)
+        assert game_20 is not None
+        assert game_20.genre == "Unknown"
+
+def test_steam_sync_handles_steam_failure(client, monkeypatch):
+    monkeypatch.setenv("STEAM_API_KEY", "test-key")
+    monkeypatch.setenv("STEAM_ID", "test-steam-id")
+
+    with patch("src.api.fetch_owned_games", new=AsyncMock(return_value=None)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/sync/steam")
+
+    assert response.status_code == 502

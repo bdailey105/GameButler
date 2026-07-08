@@ -40,6 +40,30 @@ This runs backend tests, frontend lint, frontend production build, and Docker Co
 
 **Note:** Nginx inside the frontend container proxies `/api` to the backend, so port 8095 is the only port you need to expose.
 
+## Steam Sync (optional)
+
+To enable one-click library sync, set two environment variables for the backend container:
+
+- **STEAM_API_KEY** — Get one at https://steamcommunity.com/dev/apikey
+- **STEAM_ID** — Your 64-bit SteamID, findable at https://steamid.io
+
+Pass them when starting the containers:
+
+```bash
+STEAM_API_KEY=XXXXXXXX STEAM_ID=7656119XXXXXXXXXX docker compose up -d --build
+```
+
+Or save them in a `.env` file next to `compose.yaml`:
+
+```
+STEAM_API_KEY=XXXXXXXX
+STEAM_ID=7656119XXXXXXXXXX
+```
+
+Then run `docker compose up -d --build`.
+
+**Note:** Your Steam profile's "Game details" must be public for the API to return your library. Without these vars the Sync Steam button returns a friendly "not configured" error; CSV upload keeps working regardless.
+
 ## Health Check
 
 After the containers start, verify the local deployment:

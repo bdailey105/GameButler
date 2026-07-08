@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob } from './api'
+import { fetchGames, updateGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [] }) {
@@ -327,12 +327,28 @@ function LibraryView({ onMove, onAttentionChange }) {
   const handleAutoTag = async () => {
     setLoading(true)
     try {
-      const res = await autoTagLibrary() 
+      const res = await autoTagLibrary()
       setAutoTagMsg(res.message)
       loadLibrary()
       setTimeout(() => setAutoTagMsg(''), 3000)
     } catch (err) {
       console.error(err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSync = async () => {
+    setLoading(true)
+    try {
+      const res = await syncSteamLibrary()
+      setAutoTagMsg(res.message)
+      loadLibrary()
+      setTimeout(() => setAutoTagMsg(''), 5000)
+    } catch (err) {
+      console.error(err)
+      setAutoTagMsg(err.response?.data?.detail || 'Steam sync failed.')
+      setTimeout(() => setAutoTagMsg(''), 8000)
     } finally {
       setLoading(false)
     }
@@ -375,6 +391,7 @@ function LibraryView({ onMove, onAttentionChange }) {
             <option value="casual">☕ Casual</option>
             <option value="focused">🎯 Focused</option>
           </select>
+          <button className="secondary-btn" onClick={handleSync} disabled={loading || enriching}>🔄 Sync Steam</button>
           <button className="secondary-btn" onClick={handleAutoTag} disabled={loading} title="Auto-tag uncategorized games">
             🪄 Auto-Tag
           </button>
