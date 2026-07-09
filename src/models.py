@@ -89,3 +89,12 @@ class JournalEntry(SQLModel, table=True):
     game_id: int = Field(foreign_key="game.id", index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     text: str
+
+class RecommendationDecision(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", index=True)
+    decision: str  # accepted_play | accepted_queue | rejected | deferred | more_like_this | less_like_this
+    reason: Optional[str] = None  # not_in_the_mood | too_long | too_demanding | bounced_off | defer_for_now
+    mood: Optional[str] = None  # recommendation context at decision time
+    tags_snapshot: Optional[str] = None  # game's tags when decided — keeps affinity deterministic
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -4,7 +4,7 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -1241,3 +1241,107 @@ def test_delete_game_removes_journal_entries(client):
     with Session(engine) as session:
         entries = session.exec(select(JournalEntry).where(JournalEntry.game_id == 1)).all()
         assert entries == []
+
+def test_create_recommendation_decision_accepted_play(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, tags="Indie;Story", status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/recommendations/decisions", json={"game_id": 1, "decision": "accepted_play"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["game_id"] == 1
+    assert data["decision"] == "accepted_play"
+    assert data["reason"] is None
+    assert data["tags_snapshot"] == "Indie;Story"
+
+    # Recording a decision does not mutate game status
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.status == GameStatus.LIBRARY
+
+def test_create_recommendation_decision_rejected_with_reason(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, tags="Indie"))
+        session.commit()
+
+    response = client.post("/recommendations/decisions", json={
+        "game_id": 1,
+        "decision": "rejected",
+        "reason": "too_long",
+        "mood": "story_night",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision"] == "rejected"
+    assert data["reason"] == "too_long"
+    assert data["mood"] == "story_night"
+
+def test_create_recommendation_decision_deferred(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/recommendations/decisions", json={
+        "game_id": 1,
+        "decision": "deferred",
+        "reason": "defer_for_now",
+    })
+    assert response.status_code == 200
+    assert response.json()["decision"] == "deferred"
+
+def test_create_recommendation_decision_unknown_game(client):
+    response = client.post("/recommendations/decisions", json={"game_id": 999, "decision": "accepted_play"})
+    assert response.status_code == 404
+
+def test_create_recommendation_decision_invalid_decision_value(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/recommendations/decisions", json={"game_id": 1, "decision": "maybe_later"})
+    assert response.status_code == 422
+
+def test_create_recommendation_decision_invalid_reason_value(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/recommendations/decisions", json={
+        "game_id": 1,
+        "decision": "rejected",
+        "reason": "just_because",
+    })
+    assert response.status_code == 422
+
+def test_list_recommendation_decisions_returns_newest_first(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.add(Game(id=2, name="Game B", playtime_forever=0))
+        session.commit()
+
+    client.post("/recommendations/decisions", json={"game_id": 1, "decision": "accepted_play"})
+    client.post("/recommendations/decisions", json={"game_id": 2, "decision": "rejected", "reason": "too_long"})
+
+    response = client.get("/recommendations/decisions")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["game_id"] == 2
+    assert data[1]["game_id"] == 1
+
+def test_delete_recommendation_decisions_clears_all(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    client.post("/recommendations/decisions", json={"game_id": 1, "decision": "accepted_play"})
+    client.post("/recommendations/decisions", json={"game_id": 1, "decision": "deferred"})
+
+    response = client.delete("/recommendations/decisions")
+    assert response.status_code == 200
+    assert response.json() == {"cleared": 2}
+
+    with Session(engine) as session:
+        remaining = session.exec(select(RecommendationDecision)).all()
+        assert remaining == []

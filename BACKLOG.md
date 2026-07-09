@@ -163,9 +163,9 @@
 
 ## Epic 26: Concierge Feedback & Preference Learning
 **Goal:** Learn from recommendation decisions while keeping every scoring influence visible and reversible.
-- [ ] **Story 26.1: Recommendation Decision Log** — Persist accepted, rejected, and deferred Butler decisions with an optional predefined reason.
-- [ ] **Story 26.2: Feedback Controls** — Add Play now, Up Next, Not tonight, and More/Less like this controls to primary and alternate recommendations.
-- [ ] **Story 26.3: Transparent Preference Scoring** — Apply documented, deterministic recent-feedback adjustments with inspection and reset controls.
+- [x] **Story 26.1: Recommendation Decision Log** — `RecommendationDecision` table (decision, enum reason, mood context, tags snapshot); POST validates game + enums, never mutates status; GET newest-first; DELETE clears.
+- [x] **Story 26.2: Feedback Controls** — Not tonight with one-click reason chips (skippable), 👍/👎 More/Less like this on top pick + alternates; durable aria-live confirmations; card never hides; Play now/Up Next also log accepted decisions.
+- [x] **Story 26.3: Transparent Preference Scoring** — Documented deterministic windows (deferred -25/7d, rejected -20/14d, less ±10 self / ±6-8 primary-tag siblings /30d); positive signals prefixed "Feedback:" in reasons; inspect via GET, reset via DELETE.
 
 ## Epic 27: Tonight Planner
 **Goal:** Recommend a game for the next session's actual time, energy, and setting—not only its total length or genre.

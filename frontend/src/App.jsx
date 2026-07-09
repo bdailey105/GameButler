@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -391,6 +391,8 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [attention, setAttention] = useState('')
   const [mood, setMood] = useState('')
   const [actedOn, setActedOn] = useState({})
+  const [feedback, setFeedback] = useState({})
+  const [reasonPickerFor, setReasonPickerFor] = useState(null)
   const [lastRecommendation, setLastRecommendation] = useState(recommendation)
   const moods = [
     { value: 'zone_out', label: 'Zone out', hint: 'Low friction' },
@@ -399,19 +401,44 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     { value: 'finish_something', label: 'Finish something', hint: 'Progress' },
     { value: 'surprise_me', label: 'Surprise me', hint: 'Wildcard' }
   ]
+  const deferReasons = [
+    { value: 'not_in_the_mood', label: 'Not in the mood' },
+    { value: 'too_long', label: 'Too long' },
+    { value: 'too_demanding', label: 'Too demanding' },
+    { value: 'bounced_off', label: 'Bounced off it' },
+    { value: 'defer_for_now', label: 'Just not tonight' }
+  ]
+  const feedbackConfirmations = {
+    more_like_this: 'Noted — more like this coming',
+    less_like_this: 'Noted — fewer like this',
+    deferred: "Noted — won't suggest this for a while"
+  }
 
   if (recommendation !== lastRecommendation) {
     setLastRecommendation(recommendation)
     setActedOn({})
+    setFeedback({})
+    setReasonPickerFor(null)
   }
 
   const handleAct = async (appId, status) => {
     try {
       await updateGame(appId, { status })
       setActedOn(prev => ({ ...prev, [appId]: status }))
+      postRecommendationDecision({
+        game_id: appId,
+        decision: status === 'playing' ? 'accepted_play' : 'accepted_queue',
+        mood: mood || undefined
+      }).catch(() => {})
     } catch (err) {
       console.error('Failed to update game:', err)
     }
+  }
+
+  const handleFeedback = (appId, decision, reason) => {
+    postRecommendationDecision({ game_id: appId, decision, reason, mood: mood || undefined }).catch(() => {})
+    setFeedback(prev => ({ ...prev, [appId]: { decision, confirmed: feedbackConfirmations[decision] } }))
+    setReasonPickerFor(null)
   }
 
   const handleRecommend = () => {
@@ -516,7 +543,39 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                 <button className="secondary-btn" onClick={() => handleAct(recommendation.AppID, 'up_next')} disabled={recommendation.status === 'up_next'}>+ Up Next</button>
               </>
             )}
+            <span className="rec-feedback" aria-live="polite">
+              {feedback[recommendation.AppID] ? (
+                <span className="rec-feedback-note">{feedback[recommendation.AppID].confirmed}</span>
+              ) : (
+                <>
+                  <button className="secondary-btn" onClick={() => setReasonPickerFor(recommendation.AppID)}>Not tonight</button>
+                  <button className="action-btn" onClick={() => handleFeedback(recommendation.AppID, 'more_like_this')}>👍 More like this</button>
+                  <button className="action-btn" onClick={() => handleFeedback(recommendation.AppID, 'less_like_this')}>👎 Less like this</button>
+                </>
+              )}
+            </span>
           </div>
+          {reasonPickerFor === recommendation.AppID && (
+            <div className="reason-picker">
+              {deferReasons.map(reason => (
+                <button
+                  key={reason.value}
+                  className="reason-chip"
+                  aria-label={`Not tonight — ${reason.label}`}
+                  onClick={() => handleFeedback(recommendation.AppID, 'deferred', reason.value)}
+                >
+                  {reason.label}
+                </button>
+              ))}
+              <button
+                className="reason-chip"
+                aria-label="Not tonight — skip giving a reason"
+                onClick={() => handleFeedback(recommendation.AppID, 'deferred')}
+              >
+                Skip
+              </button>
+            </div>
+          )}
           {recommendation.alternates?.length > 0 && (
             <div className="alternates">
               <p className="alternates-label">Or try:</p>
@@ -541,6 +600,16 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                           <button className="action-btn" title="Add to Up Next" onClick={() => handleAct(alt.AppID, 'up_next')} disabled={alt.status === 'up_next'}>+</button>
                         </>
                       )}
+                      <span className="rec-feedback" aria-live="polite">
+                        {feedback[alt.AppID] ? (
+                          <span className="rec-acted" title={feedback[alt.AppID].confirmed}>✓</span>
+                        ) : (
+                          <>
+                            <button className="action-btn" title="More like this" onClick={() => handleFeedback(alt.AppID, 'more_like_this')}>👍</button>
+                            <button className="action-btn" title="Less like this" onClick={() => handleFeedback(alt.AppID, 'less_like_this')}>👎</button>
+                          </>
+                        )}
+                      </span>
                     </div>
                   </div>
                 ))}

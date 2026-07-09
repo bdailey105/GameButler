@@ -109,4 +109,9 @@ export const fetchAutomationStatus = async () => {
   return response.data;
 };
 
+export const postRecommendationDecision = async (payload) => {
+  const response = await api.post('/recommendations/decisions', payload);
+  return response.data;
+};
+
 export default api;

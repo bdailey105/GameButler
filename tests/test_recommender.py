@@ -1,5 +1,6 @@
 import pytest
 import pandas as pd
+from datetime import datetime, timezone, timedelta
 from src.recommender import GameRecommender
 from src.models import GameStatus, AttentionLevel
 
@@ -299,3 +300,115 @@ def test_mood_dominance_untagged_queue_game_loses_to_mood_match():
     result = recommender.recommend(mood='story_night')
 
     assert result['Name'] == 'Story Match Not Queued'
+
+FEEDBACK_DEFAULTS = {
+    "Playtime_Forever": 0,
+    "Average_Playtime": 0,
+    "Genre": "Action",
+    "Tags": "Indie",
+    "status": GameStatus.LIBRARY,
+    "attention_level": AttentionLevel.UNSET,
+}
+
+def _feedback_df(games):
+    rows = []
+    for i, game in enumerate(games):
+        row = {**FEEDBACK_DEFAULTS, **game}
+        row.setdefault("AppID", i + 1)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+def test_deferred_game_loses_to_otherwise_identical_game():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Deferred Game"},
+        {"AppID": 2, "Name": "Untouched Game"},
+    ])
+    feedback = [{
+        "game_id": 1,
+        "decision": "deferred",
+        "tags_snapshot": "Indie",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=2),
+    }]
+    recommender = GameRecommender(df, feedback=feedback)
+
+    result = recommender.recommend()
+
+    assert result['Name'] == 'Untouched Game'
+
+def test_rejected_penalty_applies_within_window():
+    df = _feedback_df([{"AppID": 1, "Name": "Rejected Game"}])
+    baseline_score = GameRecommender(df).recommend()['score']
+
+    feedback = [{
+        "game_id": 1,
+        "decision": "rejected",
+        "tags_snapshot": "Indie",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=10),
+    }]
+    recommender = GameRecommender(df, feedback=feedback)
+
+    result = recommender.recommend()
+
+    assert result['score'] == baseline_score - 20
+
+def test_expired_deferred_decision_has_no_effect():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Game A"},
+        {"AppID": 2, "Name": "Game B"},
+    ])
+    feedback = [{
+        "game_id": 1,
+        "decision": "deferred",
+        "tags_snapshot": "Indie",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=20),
+    }]
+    recommender = GameRecommender(df, feedback=feedback)
+
+    rows = recommender.recommend_many(2)
+    scores = {row['Name']: row['score'] for row in rows}
+
+    assert scores["Game A"] == scores["Game B"]
+
+def test_more_like_this_boosts_decided_game_and_tag_sibling():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Decided Game", "Tags": "Roguelike;Indie"},
+        {"AppID": 2, "Name": "Tag Sibling", "Tags": "Roguelike;Adventure"},
+        {"AppID": 3, "Name": "Unrelated Game", "Tags": "Puzzle"},
+    ])
+    feedback = [{
+        "game_id": 1,
+        "decision": "more_like_this",
+        "tags_snapshot": "Roguelike;Indie",
+        "game_name": "Decided Game",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=1),
+    }]
+    recommender = GameRecommender(df, feedback=feedback)
+
+    rows = recommender.recommend_many(3)
+    by_name = {row['Name']: row for row in rows}
+
+    assert rows[0]['Name'] == 'Decided Game'
+    assert any(r.startswith("Feedback:") for r in by_name['Decided Game']['reasons'])
+    assert "Feedback: you asked for more like this" in by_name['Decided Game']['reasons']
+    assert "Feedback: more like Decided Game" in by_name['Tag Sibling']['reasons']
+    assert by_name['Tag Sibling']['score'] > by_name['Unrelated Game']['score']
+
+def test_less_like_this_penalizes_tag_sibling():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Decided Game", "Tags": "Roguelike;Indie"},
+        {"AppID": 2, "Name": "Tag Sibling", "Tags": "Roguelike;Adventure"},
+        {"AppID": 3, "Name": "Unrelated Game", "Tags": "Puzzle"},
+    ])
+    feedback = [{
+        "game_id": 1,
+        "decision": "less_like_this",
+        "tags_snapshot": "Roguelike;Indie",
+        "created_at": datetime.now(timezone.utc) - timedelta(days=1),
+    }]
+    recommender = GameRecommender(df, feedback=feedback)
+
+    rows = recommender.recommend_many(3)
+    by_name = {row['Name']: row for row in rows}
+
+    assert by_name['Unrelated Game']['score'] == by_name['Tag Sibling']['score'] + 6
+    assert by_name['Decided Game']['score'] == by_name['Unrelated Game']['score'] - 10
