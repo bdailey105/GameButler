@@ -718,6 +718,24 @@ def steam_sync_interval_seconds() -> Optional[int]:
         return None
     return int(hours * 3600)
 
+async def run_scheduled_enrichment(limit: int = 50):
+    with Session(engine) as session:
+        existing = session.exec(
+            select(EnrichmentJob).where(EnrichmentJob.status == "running")
+        ).first()
+        if existing:
+            print("Auto-enrich skipped: enrichment already in progress.")
+            return
+        total = len(session.exec(enrichment_candidates_query(limit)).all())
+        if total == 0:
+            return
+        job = EnrichmentJob(total=total)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+    await process_enrichment(job_id, limit)
+
 async def steam_sync_scheduler():
     while True:
         try:
@@ -726,6 +744,10 @@ async def steam_sync_scheduler():
                 print(f"Auto-sync: {result['message']}")
         except Exception as e:
             print(f"Auto-sync failed: {e}")
+        try:
+            await run_scheduled_enrichment()
+        except Exception as e:
+            print(f"Auto-enrich failed: {e}")
         interval = steam_sync_interval_seconds()
         if interval is None:
             break
