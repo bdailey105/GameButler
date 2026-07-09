@@ -664,6 +664,42 @@ select:focus-visible {
   text-overflow: ellipsis;
 }
 
+.rec-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.rec-actions .primary-btn,
+.rec-actions .secondary-btn {
+  flex: 0 1 auto;
+  padding: 0.5rem 1.2rem;
+}
+
+.rec-acted {
+  color: var(--status-done);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.alternate-actions {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.alternate-actions .action-btn {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.5rem;
+}
+
+.alternate-actions .rec-acted {
+  font-size: 0.8rem;
+  align-self: center;
+}
+
 .automation-status {
   margin: var(--space-2) 0 0;
   color: var(--text-tertiary);
