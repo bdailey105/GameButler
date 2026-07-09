@@ -977,6 +977,19 @@ def test_enrichment_candidates_exclude_max_attempts(client):
     assert 1 not in candidate_ids
     assert 2 in candidate_ids
 
+def test_enrichment_candidates_prioritize_playing_then_queue(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Old Library Game", playtime_forever=0, genre="Unknown", status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Queued Game", playtime_forever=0, genre="Unknown", status=GameStatus.UP_NEXT))
+        session.add(Game(id=3, name="Playing Game", playtime_forever=0, genre="Unknown", status=GameStatus.PLAYING))
+        session.commit()
+
+    with Session(engine) as session:
+        candidates = session.exec(enrichment_candidates_query(2)).all()
+        candidate_ids = [game.id for game in candidates]
+
+    assert candidate_ids == [3, 2]
+
 @pytest.mark.asyncio
 async def test_process_enrichment_increments_attempts(client):
     with Session(engine) as session:
