@@ -6,6 +6,17 @@ This folder tracks the next product path for GameButler as a local/home-LAN pers
 
 GameButler already has the core MVP: Steam CSV import, SQLite-backed library state, backlog status management, attention tagging, basic Steam enrichment, and Docker/LAN deployment. The next path is to make it feel less like a CRUD backlog and more like a concierge that helps Bryan decide what to play.
 
+## Current Planned Sequence
+
+1. **E25 — Game Detail & Play Journal:** preserve private return context, notes, ratings, and milestones.
+2. **E26 — Concierge Feedback & Preference Learning:** make recommendation acceptance and rejection actionable, explainable signals.
+3. **E27 — Tonight Planner:** match a recommendation to available time, energy, and play setting.
+4. **E28 — Continuation & Finish Ladder:** make started or paused games approachable with qualified estimates.
+5. **E29 — Bulk Library Curation:** support intentional cleanup of a large library in batches.
+6. **E30 — Unified Library Import:** safely import non-Steam ownership without account-linking dependencies.
+
+`BACKLOG.md` retains the concise historical epic list. `product-backlog.md` is the implementation-ready source for the detailed acceptance criteria and verification commands for E25–E30.
+
 ## Documents
 
 - [`roadmap.md`](roadmap.md) — phases and epic-level path.
