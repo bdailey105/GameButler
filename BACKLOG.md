@@ -148,3 +148,9 @@
 - [x] **Story 23.1: Top-N API** — `recommend_many(n)` in the recommender; `GET /recommend?count=N` (default 1, max 5) keeps its shape for the top pick and gains an `alternates` list for the rest.
 - [x] **Story 23.2: Mood-Dominant Scoring** — With a mood set, generic bonuses halve (Up Next +30→15, playing +12→6, history +8→4) so mood signals decide the winner; verified on the real library that all five moods now surface different top picks.
 - [x] **Story 23.3: Concierge Alternates UI** — Butler requests count=3 and shows compact "Or try:" cards (art, name, top reason) under the main recommendation.
+
+## Epic 24: Act on Recommendations
+**Goal:** Do something with a Butler pick without hunting it down in the Library — uses the existing `PUT /games/{id}` status endpoint, no backend changes expected.
+- [ ] **Story 24.1: Top-Pick Actions** — "▶ Play now" (status=playing) and "+ Up Next" (status=up_next) buttons on the main recommendation card.
+- [ ] **Story 24.2: Alternate Actions** — Same two actions, compact, on each "Or try:" alternate card.
+- [ ] **Story 24.3: Action Feedback** — After acting: inline confirmation on the card ("Moved to Up Next"), button disabled to prevent double-moves, and the game's shown status updates without a refetch.
