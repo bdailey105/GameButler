@@ -206,6 +206,51 @@ def test_recommend_accepts_mood_and_rejects_invalid_mood(client):
     response = client.get("/recommend?mood=chaos_mode")
     assert response.status_code == 422
 
+def test_recommend_with_count_returns_alternates(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2, 3, 4],
+        "Name": ["Game A", "Game B", "Game C", "Game D"],
+        "Playtime_Forever": [0, 20, 5, 0],
+        "Average_Playtime": [120, 120, 300, 600],
+        "Genre": ["Action", "Action", "RPG", "Puzzle"],
+        "Tags": ["Indie", "Indie", "Story", "Logic"],
+        "status": [GameStatus.LIBRARY, GameStatus.UP_NEXT, GameStatus.PLAYING, GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.UNSET, AttentionLevel.CASUAL, AttentionLevel.FOCUSED, AttentionLevel.UNSET],
+    })
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?count=3")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "Name" in data
+    assert "score" in data
+    assert "reasons" in data
+    assert "alternates" in data
+    assert len(data["alternates"]) <= 2
+    for alt in data["alternates"]:
+        assert "Name" in alt
+        assert "score" in alt
+
+def test_recommend_default_count_has_no_alternates(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Game A", "Game B"],
+        "Playtime_Forever": [0, 20],
+        "Average_Playtime": [120, 120],
+        "Genre": ["Action", "Action"],
+        "Tags": ["Indie", "Indie"],
+        "status": [GameStatus.LIBRARY, GameStatus.UP_NEXT],
+        "attention_level": [AttentionLevel.UNSET, AttentionLevel.CASUAL],
+    })
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?count=1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["alternates"] == []
+
 @pytest.mark.asyncio
 async def test_process_enrichment_persists_rich_metadata(client):
     with Session(engine) as session:

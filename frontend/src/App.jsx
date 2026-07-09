@@ -215,6 +215,26 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
           )}
           <p><strong>Playtime:</strong> {recommendation.Playtime_Forever} mins</p>
           <p><strong>Category:</strong> {recommendation.attention_level === 'casual' ? '☕ Casual' : recommendation.attention_level === 'focused' ? '🎯 Focused' : 'Uncategorized'}</p>
+          {recommendation.alternates?.length > 0 && (
+            <div className="alternates">
+              <p className="alternates-label">Or try:</p>
+              <div className="alternates-row">
+                {recommendation.alternates.map(alt => (
+                  <div className="alternate-card" key={alt.AppID}>
+                    {alt.header_image ? (
+                      <img src={alt.header_image} alt="" loading="lazy" />
+                    ) : (
+                      <div className="alternate-placeholder">{alt.Name?.slice(0, 1)}</div>
+                    )}
+                    <div className="alternate-info">
+                      <span className="alternate-name">{alt.Name}</span>
+                      {alt.reasons?.length > 0 && <span className="alternate-reason">{alt.reasons[0]}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
     </div>
@@ -895,7 +915,7 @@ function App() {
     setError(null)
     setRecommendation(null)
     try {
-      const data = await getRecommendation(params)
+      const data = await getRecommendation({ ...params, count: 3 })
       setRecommendation(data)
     } catch (err) {
       if (err.response && err.response.status === 404) {

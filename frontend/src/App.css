@@ -593,6 +593,77 @@ select:focus-visible {
   font-size: 0.85rem;
 }
 
+.alternates {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.alternates-label {
+  margin: 0 0 var(--space-2);
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.alternates-row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.alternate-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+}
+
+.alternate-card img,
+.alternate-placeholder {
+  width: 72px;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.alternate-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  font-weight: 850;
+}
+
+.alternate-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.alternate-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alternate-reason {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .automation-status {
   margin: var(--space-2) 0 0;
   color: var(--text-tertiary);

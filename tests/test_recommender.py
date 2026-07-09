@@ -243,3 +243,59 @@ def test_mood_scoring_picks_expected_winner(mood, games, expected_winner):
     result = recommender.recommend(mood=mood)
 
     assert result['Name'] == expected_winner
+
+def test_recommend_many_returns_n_distinct_games_sorted_descending(sample_df):
+    sample_df['status'] = [GameStatus.LIBRARY] * len(sample_df)
+    recommender = GameRecommender(sample_df)
+
+    rows = recommender.recommend_many(3, mood='story_night')
+
+    assert len(rows) == 3
+    names = [row['Name'] for row in rows]
+    assert len(set(names)) == 3
+    scores = [row['score'] for row in rows]
+    assert scores == sorted(scores, reverse=True)
+
+def test_recommend_many_first_result_matches_recommend(sample_df):
+    sample_df['status'] = [
+        GameStatus.LIBRARY,
+        GameStatus.UP_NEXT,
+        GameStatus.LIBRARY,
+        GameStatus.LIBRARY,
+        GameStatus.LIBRARY,
+    ]
+    recommender = GameRecommender(sample_df)
+
+    single = recommender.recommend()
+    many = recommender.recommend_many(3)
+
+    assert many[0]['Name'] == single['Name']
+
+def test_mood_dominance_untagged_queue_game_loses_to_mood_match():
+    df = pd.DataFrame([
+        {
+            "AppID": 1,
+            "Name": "Queued But Mismatched",
+            "Playtime_Forever": 0,
+            "Average_Playtime": 0,
+            "Genre": "Action",
+            "Tags": "Shooter",
+            "status": GameStatus.UP_NEXT,
+            "attention_level": AttentionLevel.UNSET,
+        },
+        {
+            "AppID": 2,
+            "Name": "Story Match Not Queued",
+            "Playtime_Forever": 0,
+            "Average_Playtime": 0,
+            "Genre": "RPG",
+            "Tags": "Story Rich;Choices Matter",
+            "status": GameStatus.LIBRARY,
+            "attention_level": AttentionLevel.FOCUSED,
+        },
+    ])
+    recommender = GameRecommender(df)
+
+    result = recommender.recommend(mood='story_night')
+
+    assert result['Name'] == 'Story Match Not Queued'

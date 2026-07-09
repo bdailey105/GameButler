@@ -142,3 +142,9 @@
 - [x] **Story 22.2: Length-Aware Moods** — short_session penalizes 20h+ games (-15) even on tag match; finish_something adds +15 when remaining time (HLTB minus playtime) ≤ 12h.
 - [x] **Story 22.3: Convincing Reasons** — Dynamic per-game reasons: "You've already put in 64h", "~3h to beat — fits a short session", "~1h left to finish".
 - [x] **Story 22.4: Scoring Regression Tests** — Table-driven mood scoring tests (5 parametrized cases) pin winner selection; existing score pins retained.
+
+## Epic 23: Multiple Suggestions
+**Goal:** Butler offers a top pick plus alternates, and different moods actually surface different games (today one queued game dominates every mood because generic status bonuses outweigh mood signals).
+- [x] **Story 23.1: Top-N API** — `recommend_many(n)` in the recommender; `GET /recommend?count=N` (default 1, max 5) keeps its shape for the top pick and gains an `alternates` list for the rest.
+- [x] **Story 23.2: Mood-Dominant Scoring** — With a mood set, generic bonuses halve (Up Next +30→15, playing +12→6, history +8→4) so mood signals decide the winner; verified on the real library that all five moods now surface different top picks.
+- [x] **Story 23.3: Concierge Alternates UI** — Butler requests count=3 and shows compact "Or try:" cards (art, name, top reason) under the main recommendation.
