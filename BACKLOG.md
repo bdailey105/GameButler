@@ -154,3 +154,39 @@
 - [x] **Story 24.1: Top-Pick Actions** — "▶ Play now" (status=playing) and "+ Up Next" (status=up_next) buttons on the main recommendation card; disabled when already in that status.
 - [x] **Story 24.2: Alternate Actions** — Compact ▶ / + buttons on each "Or try:" alternate card.
 - [x] **Story 24.3: Action Feedback** — Buttons swap to inline confirmation ("✓ Moved to Up Next" / "▶ Playing now") after acting; per-game acted state resets on a new recommendation.
+
+## Epic 25: Game Detail & Play Journal
+**Goal:** Give each game a private home for notes, ratings, milestones, and return context.
+- [ ] **Story 25.1: Personal Game Context Persistence** — Store personal ratings, started/completed dates, current-state notes, and append-only journal entries without changing Steam activity history.
+- [ ] **Story 25.2: Detail & Journal API** — Expose validated game-detail and journal CRUD endpoints with empty and invalid-input coverage.
+- [ ] **Story 25.3: Accessible Game Detail Drawer** — Open game details from cards without losing library position; support notes, milestones, loading, empty, and keyboard states.
+
+## Epic 26: Concierge Feedback & Preference Learning
+**Goal:** Learn from recommendation decisions while keeping every scoring influence visible and reversible.
+- [ ] **Story 26.1: Recommendation Decision Log** — Persist accepted, rejected, and deferred Butler decisions with an optional predefined reason.
+- [ ] **Story 26.2: Feedback Controls** — Add Play now, Up Next, Not tonight, and More/Less like this controls to primary and alternate recommendations.
+- [ ] **Story 26.3: Transparent Preference Scoring** — Apply documented, deterministic recent-feedback adjustments with inspection and reset controls.
+
+## Epic 27: Tonight Planner
+**Goal:** Recommend a game for the next session's actual time, energy, and setting—not only its total length or genre.
+- [ ] **Story 27.1: Session Inputs & Scoring** — Add validated available-minutes, energy, and context inputs to Butler with explicit-filter precedence and explanations.
+- [ ] **Story 27.2: Planner UI** — Add a responsive, one-screen 15/30/60/90+ minute session planner while retaining advanced filters.
+- [ ] **Story 27.3: Personal Session-Suitability Tags** — Let the user mark games as burst-friendly, controller-only, or podcast-friendly and use them as explainable overrides.
+
+## Epic 28: Continuation & Finish Ladder
+**Goal:** Make progress on started games approachable without overstating metadata-derived completion estimates.
+- [ ] **Story 28.1: Paused State & Return Context** — Add a paused status, logged transitions, and an optional “return when…” note.
+- [ ] **Story 28.2: Remaining-Time Confidence** — Return qualified remaining-duration estimates only when time-to-beat and playtime support one.
+- [ ] **Story 28.3: Continuation Ladder** — Surface ranked options for a short continuation, one session, or a likely finish this week.
+
+## Epic 29: Bulk Library Curation
+**Goal:** Curate a large library in intentional batches rather than one game card at a time.
+- [ ] **Story 29.1: Atomic Bulk Updates** — Apply validated status, attention, and session-suitability changes to selected games in one transaction.
+- [ ] **Story 29.2: Multi-Select Library UI** — Add keyboard-accessible selection, a bulk-action bar, confirmations, and clear affected-count feedback.
+- [ ] **Story 29.3: Curation Views & Saved Filters** — Add neglected/uncategorized/deferred presets and local saved filter combinations.
+
+## Epic 30: Unified Library Import
+**Goal:** Unify non-Steam ownership with safe local imports before attempting account-linking integrations.
+- [ ] **Story 30.1: Source-Aware External Identity** — Persist source and external IDs with duplicate prevention while preserving manual and Steam records.
+- [ ] **Story 30.2: Preview-First External Import** — Accept a documented normalized CSV, preview all changes, and preserve personal curation by default.
+- [ ] **Story 30.3: Unified Import UI & Source Filters** — Guide external imports in the UI and allow combined source/platform/status/attention filters.

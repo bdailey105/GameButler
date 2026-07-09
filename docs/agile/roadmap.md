@@ -61,40 +61,67 @@ Success signal: the app feels like the design handoff: dark navy shell, compact 
 
 Success signal: GameButler can say why a game is a good pick for tonight.
 
-## Phase 4 — Backlog Operating System
+## Phase 4 — Personal Game Memory
 
-**Goal:** Make the library and Up Next queue easy to curate at scale.
+**Goal:** Make every game retain Bryan's own context, not just provider metadata and raw Steam playtime.
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E16 | Queue Rules & Drag Ordering | Done | Up Next becomes an intentional queue, not just another status. |
-| E17 | Bulk Library Editing | Backlog | Large libraries can be cleaned up quickly. |
-| E18 | Game Detail Drawer | Backlog | Each game has a richer home for notes, metadata, and actions. |
+| E25 | Game Detail & Play Journal | Backlog | Each game has private notes, ratings, milestones, and an accessible detail drawer. |
 
-Success signal: Bryan can manage hundreds of games without one-card-at-a-time friction.
+Success signal: Bryan can resume a game weeks later knowing where he left off and why he intended to return.
 
-## Phase 5 — Local Reliability
+## Phase 5 — Adaptive Concierge
 
-**Goal:** Make the home-LAN deployment safe to run long-term.
+**Goal:** Improve Butler with reversible feedback and a concrete plan for the next session.
+
+| Epic | Title | Status | Outcome |
+| --- | --- | --- | --- |
+| E26 | Concierge Feedback & Preference Learning | Backlog | Butler learns from accepted, rejected, and deferred recommendations without opaque behavior. |
+| E27 | Tonight Planner | Backlog | Recommendations account for time, energy, and play setting rather than only genre or total length. |
+
+Success signal: Bryan can ask what fits tonight and see a transparent explanation grounded in both current context and prior choices.
+
+## Phase 6 — Intentional Progress & Curation
+
+**Goal:** Make a large library easier to curate while making started games approachable again.
+
+| Epic | Title | Status | Outcome |
+| --- | --- | --- | --- |
+| E28 | Continuation & Finish Ladder | Backlog | Started or paused games surface as realistic continuation and finish options with qualified estimates. |
+| E29 | Bulk Library Curation | Backlog | Selection, batch actions, and focused filter views eliminate one-card-at-a-time library cleanup. |
+
+Success signal: Bryan can make a small, intentional curation pass and choose a meaningful continuation without turning the backlog into an obligation.
+
+## Phase 7 — Unified Personal Library
+
+**Goal:** Safely bring non-Steam ownership into GameButler before considering account-linking integrations.
+
+| Epic | Title | Status | Outcome |
+| --- | --- | --- | --- |
+| E30 | Unified Library Import | Backlog | Source-aware, preview-first imports unify local records from Switch, PlayStation, Xbox, retro, and launcher exports. |
+
+Success signal: GameButler can recommend across the games Bryan owns without storing third-party account credentials.
+
+## Reliability Foundation
+
+**Goal:** Keep the local/home-LAN deployment safe while the personal library becomes more valuable.
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
 | E19 | Backup/Restore Workflow | Done | `make backup` / `make restore` protect `data/gamebutler.db`. |
-| E20 | Import Safety & Preview | Done | Uploads are transactional, previewable, and collision-safe. |
+| E20 | Import Safety & Preview | Done | Steam imports are transactional, previewable, and collision-safe. |
 | E21 | Database Migrations | Done | Schema changes are explicit and recoverable. |
 
-Success signal: adding metadata fields and jobs does not risk losing the local library.
+Success signal: adding personal context and import sources does not risk losing curated library state.
 
 ## Recommended Sequence
 
-1. E12 — Persist Steam art/descriptions. Done.
-2. E22 — Launcher visual system foundation. Done.
-3. E13 — Enrichment job progress. Done.
-4. E14 — Recommendation scoring and explanation. Done.
-5. E15 — Mood buttons. Done.
-6. E19 — Backup/restore workflow. Done.
-7. E20 — Import safety and preview. Done.
-8. E21 — Database migrations. Done.
-9. E16 — Queue rules and ordering. Done.
+1. E25 — Game Detail & Play Journal.
+2. E26 — Concierge Feedback & Preference Learning.
+3. E27 — Tonight Planner.
+4. E28 — Continuation & Finish Ladder.
+5. E29 — Bulk Library Curation.
+6. E30 — Unified Library Import.
 
-This sequence locks in the data foundation, applies the selected visual system before more UI-heavy work, then improves the core recommender and protects the local database.
+This sequence uses the existing rich production metadata as a foundation, then adds personal memory, explicit intent, and feedback before widening the library's scope.

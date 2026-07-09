@@ -493,3 +493,409 @@ cd frontend && npm run lint && npm run build
 ```bash
 cd frontend && npm run lint && npm run build
 ```
+
+## E25 — Game Detail & Play Journal
+
+**Goal:** Give each game a private home for the personal context that metadata and Steam playtime cannot capture.
+
+### Story E25-S1 — Persist personal game context
+
+**As a** GameButler user, **I want** to record my own notes, rating, and play milestones for a game, **so that** I can resume it without reconstructing context from memory.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** None
+
+#### Acceptance Criteria
+
+- [ ] Games can store an optional personal rating, started/completed dates, and a concise current-state note.
+- [ ] A game can have append-only journal entries with timestamps; existing Steam-derived `PlayEvent` records remain unchanged.
+- [ ] Empty personal fields do not change existing game-card or recommendation behavior.
+- [ ] A schema migration and persistence tests cover new fields and journal records.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -q
+```
+
+### Story E25-S2 — Expose game detail and journal APIs
+
+**As a** GameButler client, **I want** read/write endpoints for personal game context and journal entries, **so that** the frontend can show a complete game history without client-side data hacks.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E25-S1
+
+#### Acceptance Criteria
+
+- [ ] `GET /games/{id}` returns a game with personal context and chronologically ordered journal entries.
+- [ ] Validated endpoints create, edit, and delete only a user's own journal entries for an existing game.
+- [ ] Invalid dates, ratings outside the documented range, blank entries, and missing game IDs return clear errors.
+- [ ] API tests cover empty, populated, and validation cases.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_api.py -q
+```
+
+### Story E25-S3 — Add a Game Detail Drawer
+
+**As a** GameButler user, **I want** a detail drawer from any game card, **so that** I can view metadata, play history, and personal notes without losing my place in the library.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E25-S2, E22
+
+#### Acceptance Criteria
+
+- [ ] A card action opens an accessible drawer with art, metadata, status actions, personal context, and journal timeline.
+- [ ] The drawer supports adding a note and editing personal context with explicit saved/error feedback.
+- [ ] Keyboard focus is trapped while open and returns to the originating card when closed.
+- [ ] Empty and loading states are provided for games without notes or enriched metadata.
+
+#### Verification
+
+```bash
+cd frontend && npm run lint && npm run build
+```
+
+## E26 — Concierge Feedback & Preference Learning
+
+**Goal:** Let GameButler learn from recommendation decisions while keeping every influence inspectable and reversible.
+
+### Story E26-S1 — Record recommendation decisions
+
+**As a** GameButler user, **I want** to record why I accepted or rejected a recommendation, **so that** future picks reflect my actual preferences rather than only static metadata.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E14
+
+#### Acceptance Criteria
+
+- [ ] A recommendation decision stores the game, recommendation context, decision type, optional reason, and timestamp.
+- [ ] Supported rejection reasons include not in the mood, too long, too demanding, already bounced off it, and defer for now.
+- [ ] Decision creation validates the game and enumerated reason values without mutating game status unless an explicit action requests it.
+- [ ] Persistence and API tests cover accepted, rejected, deferred, and invalid decisions.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -q
+```
+
+### Story E26-S2 — Add recommendation feedback controls
+
+**As a** GameButler user, **I want** to give quick feedback directly on Butler picks, **so that** I can reject an unhelpful answer in one step.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E26-S1
+
+#### Acceptance Criteria
+
+- [ ] The main recommendation and alternates offer Play now, Up Next, Not tonight, and More/Less like this controls.
+- [ ] Rejecting a game can optionally capture one predefined reason without requiring free text.
+- [ ] Feedback shows a durable confirmation and does not hide the current recommendation unexpectedly.
+- [ ] Controls remain usable by keyboard and announce result state to assistive technology.
+
+#### Verification
+
+```bash
+cd frontend && npm run lint && npm run build
+```
+
+### Story E26-S3 — Apply transparent preference adjustments
+
+**As a** GameButler user, **I want** recommendation explanations to show how my feedback affected a pick, **so that** preference learning remains trustworthy and under my control.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E26-S1
+
+#### Acceptance Criteria
+
+- [ ] Scoring applies deterministic, documented adjustments from recent recommendation decisions.
+- [ ] A deferred game is temporarily deprioritized rather than permanently hidden.
+- [ ] Recommendation reasons distinguish personal-feedback signals from mood, queue, and metadata signals.
+- [ ] A preference-history endpoint or settings view lets the user inspect and clear learned signals.
+- [ ] Regression tests pin scoring behavior and reset behavior.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -q
+```
+
+## E27 — Tonight Planner
+
+**Goal:** Turn “what should I play?” into a recommendation that respects the time, energy, and setting of the next session.
+
+### Story E27-S1 — Add session-planning inputs to the recommender
+
+**As a** GameButler user, **I want** to describe tonight's available time, energy, and setting, **so that** Butler can distinguish a short game from a game that fits this particular session.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E14, E15
+
+#### Acceptance Criteria
+
+- [ ] `/recommend` accepts optional validated session inputs for available minutes, energy level, and play context.
+- [ ] Explicit filters continue to take precedence over session-planning defaults.
+- [ ] The response explains which session inputs influenced the score.
+- [ ] Unknown metadata lowers confidence rather than falsely claiming a game fits the session.
+- [ ] Recommender/API tests cover valid combinations, invalid inputs, and explicit-filter precedence.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -q
+```
+
+### Story E27-S2 — Build the Tonight Planner UI
+
+**As a** GameButler user, **I want** a one-screen session planner, **so that** I can ask for a useful recommendation without configuring raw metadata filters.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E27-S1
+
+#### Acceptance Criteria
+
+- [ ] Butler offers quick choices for 15/30/60/90+ minutes, energy, and context such as desk, couch, handheld, or podcast-friendly.
+- [ ] The planner keeps advanced genre/tag filters available but visually secondary.
+- [ ] Chosen inputs remain visible in the recommendation explanation and can be reset in one action.
+- [ ] Mobile layout supports the entire flow without horizontal scrolling or obscured controls.
+
+#### Verification
+
+```bash
+cd frontend && npm run lint && npm run build
+```
+
+### Story E27-S3 — Add game session-suitability overrides
+
+**As a** GameButler user, **I want** to mark a game as good for bursts, controller-only, or podcast-friendly, **so that** personal experience can correct generic metadata.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E25-S1, E27-S1
+
+#### Acceptance Criteria
+
+- [ ] Game detail supports optional, user-controlled session-suitability tags.
+- [ ] Planner scoring uses these tags as explicit, explainable bonuses only when they match the chosen context.
+- [ ] Untagged games remain eligible and receive no invented suitability claims.
+- [ ] Persistence, API, and scoring tests cover manual overrides and unset tags.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py tests/test_recommender.py -q
+```
+
+## E28 — Continuation & Finish Ladder
+
+**Goal:** Help the user make intentional progress on started games without pretending that playtime is exact story completion.
+
+### Story E28-S1 — Add a paused state and continuation context
+
+**As a** GameButler user, **I want** to pause a game with an optional return note, **so that** I can defer it without confusing it with an abandoned or never-started game.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E25-S1
+
+#### Acceptance Criteria
+
+- [ ] Game status supports a paused state and status transitions are recorded in `PlayEvent`.
+- [ ] Paused games are excluded from default recommendations but can be explicitly requested by continuation-oriented planning.
+- [ ] A paused game can record an optional “return when…” note without requiring a journal entry.
+- [ ] Migration, API, and recommender tests cover status transitions and default exclusions.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py tests/test_recommender.py -q
+```
+
+### Story E28-S2 — Return estimated remaining time with confidence
+
+**As a** GameButler user, **I want** a clearly qualified estimate of what remains for a started game, **so that** I can choose between a continuation and a fresh start responsibly.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E28-S1, E19
+
+#### Acceptance Criteria
+
+- [ ] The API can return an estimated remaining duration for eligible games based on available time-to-beat and playtime.
+- [ ] Each estimate includes a confidence/status label that makes clear it is metadata-derived rather than actual completion tracking.
+- [ ] Missing, zero, or implausible source values result in an unavailable estimate instead of a misleading number.
+- [ ] Tests cover estimates, missing metadata, and games whose playtime exceeds the source duration.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_recommender.py -q
+```
+
+### Story E28-S3 — Present a continuation and finish ladder
+
+**As a** GameButler user, **I want** ranked continuation options such as “15 minutes,” “one session,” and “this week,” **so that** progress feels approachable rather than like another backlog obligation.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E27-S1, E28-S2
+
+#### Acceptance Criteria
+
+- [ ] Butler can return ranked continuation candidates for short, medium, and finish-oriented horizons.
+- [ ] Results prioritize active/queued games and clearly explain status, recent activity, and estimate signals.
+- [ ] The UI labels estimates as approximate and provides an empty state when no trustworthy candidates exist.
+- [ ] Regression tests pin default ranking and horizon-specific behavior.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -q
+cd frontend && npm run lint && npm run build
+```
+
+## E29 — Bulk Library Curation
+
+**Goal:** Let a large personal library be curated in batches, so recommendation quality improves without one-card-at-a-time work.
+
+### Story E29-S1 — Add atomic bulk game updates
+
+**As a** GameButler user, **I want** to update selected games together, **so that** I can apply consistent backlog and attention decisions efficiently.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E21
+
+#### Acceptance Criteria
+
+- [ ] A bulk endpoint applies supported status, attention, and session-suitability changes to a supplied list of game IDs in one transaction.
+- [ ] The endpoint rejects empty selections, missing IDs, invalid values, and partial failures without making a partial update.
+- [ ] Queue ordering rules remain correct when bulk actions move games into or out of Up Next.
+- [ ] API and persistence tests cover success, rollback, and queue edge cases.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -q
+```
+
+### Story E29-S2 — Add multi-select library workflows
+
+**As a** GameButler user, **I want** to select and update multiple library games from the list view, **so that** I can clean up a large backlog quickly.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E29-S1
+
+#### Acceptance Criteria
+
+- [ ] Library cards support keyboard-accessible multi-select with a clear selected-count indicator.
+- [ ] A bulk-action bar can set status, attention, and session-suitability tags for the current selection.
+- [ ] Destructive or high-impact actions require explicit confirmation and report affected-count results.
+- [ ] Selection is cleared or reconciled predictably after filters, refreshes, and successful actions.
+
+#### Verification
+
+```bash
+cd frontend && npm run lint && npm run build
+```
+
+### Story E29-S3 — Add curation views and saved filters
+
+**As a** GameButler user, **I want** focused views for neglected or uncategorized games, **so that** I can make small, intentional cleanup passes.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E29-S2
+
+#### Acceptance Criteria
+
+- [ ] Library provides filter presets for untagged attention, never played, started-but-not-active, and deferred games.
+- [ ] A user can save and reuse a named local filter combination without sharing data externally.
+- [ ] Filter views show counts and explicit empty states.
+- [ ] API and UI tests cover preset query behavior and saved-filter validation.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_api.py -q
+cd frontend && npm run lint && npm run build
+```
+
+## E30 — Unified Library Import
+
+**Goal:** Bring non-Steam ownership into GameButler through reliable, import-first workflows before considering fragile account-linking integrations.
+
+### Story E30-S1 — Add source-aware external game identity
+
+**As a** GameButler user, **I want** imported non-Steam games to retain their platform and source identity, **so that** repeated imports update the right record instead of creating duplicates.
+
+**Status:** Backlog
+**Type:** AFK
+**Blocked by:** E16, E21
+
+#### Acceptance Criteria
+
+- [ ] Games can persist an optional library source and source-specific external ID in addition to the existing platform.
+- [ ] Database uniqueness rules prevent duplicate records for the same source/external-ID pair while preserving manual games without a source ID.
+- [ ] Existing Steam and manually created games migrate without loss or identity collisions.
+- [ ] Migration and persistence tests cover duplicate prevention and backward compatibility.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -q
+```
+
+### Story E30-S2 — Preview and import a normalized external library file
+
+**As a** GameButler user, **I want** to preview a non-Steam library import before it writes, **so that** I can safely bring in Switch, PlayStation, Xbox, retro, or launcher-exported games.
+
+**Status:** Backlog
+**Type:** HITL
+**Blocked by:** E30-S1, E20
+
+#### Acceptance Criteria
+
+- [ ] The importer accepts a documented normalized CSV format with title, platform, source, and optional external ID/metadata columns.
+- [ ] Preview reports new, updated, duplicate, skipped, and invalid rows before confirmation.
+- [ ] Import preserves existing personal status, notes, ratings, and manual metadata unless the user explicitly elects to replace a field.
+- [ ] Invalid headers, duplicate source identities, and unsupported platforms return actionable validation errors.
+
+#### Verification
+
+```bash
+env -u PYTHONPATH .venv/bin/pytest tests/test_data_loader.py tests/test_api.py -q
+```
+
+### Story E30-S3 — Add unified-library import UI and source filters
+
+**As a** GameButler user, **I want** a guided import flow and source filters, **so that** games from every platform remain understandable in one concierge library.
+
+**Status:** Backlog
+**Type:** HITL
+**Blocked by:** E30-S2
+
+#### Acceptance Criteria
+
+- [ ] Upload guides the user through file selection, preview, explicit confirmation, and results for external-library imports.
+- [ ] Library and game detail surfaces show platform/source identity without cluttering Steam-only workflows.
+- [ ] Source and platform filters can be combined with existing status, attention, and search filters.
+- [ ] The UI explains that imports are local and account credentials are not requested or stored.
+
+#### Verification
+
+```bash
+cd frontend && npm run lint && npm run build
+```
