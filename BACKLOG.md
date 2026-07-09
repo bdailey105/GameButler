@@ -138,7 +138,7 @@
 
 ## Epic 22: Recommender Tune-Up
 **Goal:** Scoring that actually uses the data Epics 19/20 unlocked — real community tags and real time-to-beat — with reasons a human finds convincing.
-- [ ] **Story 22.1: Tag-Aware Mood Scoring** — Mood mappings score against SteamSpy community tags (e.g. zone_out → "relaxing", "casual"; story_night → "story rich", "atmospheric") instead of relying on genre alone; audit `apply_mood_score` against the tag vocabulary actually present in the library.
-- [ ] **Story 22.2: Length-Aware Moods** — finish_something and short_session weigh `average_playtime` (HLTB) directly: prefer games finishable in the time budget; penalize 60h epics for short_session even when tags match.
-- [ ] **Story 22.3: Convincing Reasons** — Reason strings cite concrete signals ("~8h to beat — finishable this week", "tagged Story Rich like 4 of your finished games") instead of generic filler ("Fresh start from your library").
-- [ ] **Story 22.4: Scoring Regression Tests** — Table-driven tests pinning mood/tag/length scoring behavior so future tuning can't silently regress recommendations.
+- [x] **Story 22.1: Tag-Aware Mood Scoring** — Mood keyword lists rebuilt against the library's real SteamSpy vocabulary: zone_out gains Relaxing/Sandbox/City Builder/Management/Racing etc., story_night gains Atmospheric/Choices Matter/Mystery, short_session gains Platformer/Card Game/Roguelite.
+- [x] **Story 22.2: Length-Aware Moods** — short_session penalizes 20h+ games (-15) even on tag match; finish_something adds +15 when remaining time (HLTB minus playtime) ≤ 12h.
+- [x] **Story 22.3: Convincing Reasons** — Dynamic per-game reasons: "You've already put in 64h", "~3h to beat — fits a short session", "~1h left to finish".
+- [x] **Story 22.4: Scoring Regression Tests** — Table-driven mood scoring tests (5 parametrized cases) pin winner selection; existing score pins retained.
