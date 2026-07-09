@@ -11,9 +11,9 @@ class GameRecommender:
     def __init__(self, df: pd.DataFrame):
         self.df = df
 
-    def recommend(self, 
-                  genre: Optional[str] = None, 
-                  tag: Optional[str] = None, 
+    def recommend(self,
+                  genre: Optional[str] = None,
+                  tag: Optional[str] = None,
                   unplayed_only: bool = False,
                   min_length: Optional[int] = None,
                   max_length: Optional[int] = None,
@@ -22,7 +22,7 @@ class GameRecommender:
                   ) -> Optional[pd.Series]:
         """
         Returns the highest-scoring game matching the criteria.
-        
+
         Args:
             genre: Substring to match in the Genre column (case-insensitive).
             tag: Substring to match in the Tags column (case-insensitive).
@@ -31,11 +31,45 @@ class GameRecommender:
             max_length: Maximum Average_Playtime (minutes).
             attention_level: Filter by specific attention level (casual, focused).
         """
+        rows = self.recommend_many(
+            1,
+            genre=genre,
+            tag=tag,
+            unplayed_only=unplayed_only,
+            min_length=min_length,
+            max_length=max_length,
+            attention_level=attention_level,
+            mood=mood,
+        )
+        return rows[0] if rows else None
+
+    def recommend_many(self,
+                        n: int = 1,
+                        genre: Optional[str] = None,
+                        tag: Optional[str] = None,
+                        unplayed_only: bool = False,
+                        min_length: Optional[int] = None,
+                        max_length: Optional[int] = None,
+                        attention_level: Optional[str] = None,
+                        mood: Optional[str] = None
+                        ) -> list:
+        """
+        Returns up to n highest-scoring games matching the criteria, sorted best-first.
+
+        Args:
+            n: Maximum number of games to return.
+            genre: Substring to match in the Genre column (case-insensitive).
+            tag: Substring to match in the Tags column (case-insensitive).
+            unplayed_only: If True, only considers games with 0 playtime.
+            min_length: Minimum Average_Playtime (minutes).
+            max_length: Maximum Average_Playtime (minutes).
+            attention_level: Filter by specific attention level (casual, focused).
+        """
         if self.df.empty:
-            return None
-            
+            return []
+
         filtered_df = self.df.copy()
-        
+
         # Default Filter: Exclude Completed and Abandoned.
         # Assuming we want to play things we haven't finished or abandoned.
         if 'status' in filtered_df.columns:
@@ -45,11 +79,11 @@ class GameRecommender:
         # Filter by playtime
         if unplayed_only:
             filtered_df = filtered_df[filtered_df['Playtime_Forever'] == 0]
-            
+
         # Filter by genre
         if genre:
             filtered_df = filtered_df[filtered_df['Genre'].astype(str).str.contains(genre, case=False, na=False)]
-            
+
         # Filter by tag
         if tag:
             filtered_df = filtered_df[filtered_df['Tags'].astype(str).str.contains(tag, case=False, na=False)]
@@ -64,9 +98,9 @@ class GameRecommender:
         # Filter by Attention Level
         if attention_level and 'attention_level' in filtered_df.columns:
             filtered_df = filtered_df[self.normalize_values(filtered_df['attention_level']) == attention_level]
-            
+
         if filtered_df.empty:
-            return None
+            return []
 
         scored_df = self.score_games(
             filtered_df,
@@ -78,7 +112,7 @@ class GameRecommender:
             attention_level=attention_level,
             mood=mood,
         )
-        return scored_df.iloc[0]
+        return [row for _, row in scored_df.head(n).iterrows()]
 
     def score_games(self,
                     df: pd.DataFrame,
@@ -108,10 +142,12 @@ class GameRecommender:
             for idx in scored.index[mask]:
                 scored.at[idx, "_reasons"] = scored.at[idx, "_reasons"] + [make_reason(scored.loc[idx])]
 
+        queue_pts, playing_pts, history_pts = (15, 6, 4) if mood else (30, 12, 8)
+
         if "status" in scored.columns:
             status = self.normalize_values(scored["status"])
-            add_reason(status == GameStatus.UP_NEXT.value, 30, "Already in your Up Next queue")
-            add_reason(status == GameStatus.PLAYING.value, 12, "You have already started it")
+            add_reason(status == GameStatus.UP_NEXT.value, queue_pts, "Already in your Up Next queue")
+            add_reason(status == GameStatus.PLAYING.value, playing_pts, "You have already started it")
 
         if attention_level and "attention_level" in scored.columns:
             add_reason(self.normalize_values(scored["attention_level"]) == attention_level, 25, f"Matches your {attention_level} attention setting")
@@ -121,7 +157,7 @@ class GameRecommender:
         else:
             add_dynamic_reason(
                 scored["Playtime_Forever"] > 0,
-                8,
+                history_pts,
                 lambda row: f"You've already put in {_format_hours(row['Playtime_Forever'])}",
             )
             add_reason(scored["Playtime_Forever"] == 0, 5, "Fresh start from your library")

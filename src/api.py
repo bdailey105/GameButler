@@ -146,6 +146,9 @@ class RecommendationResponse(BaseModel):
     attention_level: Optional[str] = None
     score: Optional[int] = None
     reasons: List[str] = []
+    alternates: List["RecommendationResponse"] = []
+
+RecommendationResponse.model_rebuild()
 
 class ImportPreviewResponse(BaseModel):
     filename: str
@@ -806,14 +809,15 @@ async def recommend_game(
     unplayed_only: bool = False,
     length: Optional[str] = Query(None, pattern="^(short|medium|long)$"),
     attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$"),
-    mood: Optional[str] = Query(None, pattern="^(zone_out|story_night|short_session|finish_something|surprise_me)$")
+    mood: Optional[str] = Query(None, pattern="^(zone_out|story_night|short_session|finish_something|surprise_me)$"),
+    count: int = Query(1, ge=1, le=5)
 ):
     if recommender is None or recommender.df.empty:
         raise HTTPException(status_code=404, detail="No game library loaded. Please upload a CSV file.")
 
     min_len = None
     max_len = None
-    
+
     if length == 'short':
         max_len = 300
     elif length == 'long':
@@ -821,8 +825,9 @@ async def recommend_game(
     elif length == 'medium':
         min_len = 300
         max_len = 1200
-        
-    game = recommender.recommend(
+
+    games = recommender.recommend_many(
+        count,
         genre=genre,
         tag=tag,
         unplayed_only=unplayed_only,
@@ -831,13 +836,18 @@ async def recommend_game(
         attention_level=attention_level,
         mood=mood
     )
-    
-    if game is None:
+
+    if not games:
         raise HTTPException(status_code=404, detail="No suitable game found matching your criteria.")
 
-    result = game.to_dict()
-    result["score"] = int(result.get("score", 0))
-    result["reasons"] = list(result.get("reasons") or [])
+    def serialize(game):
+        result = game.to_dict()
+        result["score"] = int(result.get("score", 0))
+        result["reasons"] = list(result.get("reasons") or [])
+        return result
+
+    result = serialize(games[0])
+    result["alternates"] = [serialize(game) for game in games[1:]]
     return result
 
 if __name__ == "__main__":
