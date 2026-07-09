@@ -333,6 +333,28 @@ def test_current_enrichment_job_prefers_running_then_completed(client):
     assert response.status_code == 200
     assert response.json()["id"] == completed_id
 
+def test_lifespan_marks_stale_running_job_failed():
+    SQLModel.metadata.drop_all(engine)
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        job = EnrichmentJob(status="running", total=5, processed=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    real_exists = os.path.exists
+    with patch("src.api.engine", engine), \
+         patch("src.api.os.path.exists", side_effect=lambda path: False if str(path).endswith("sample_library.csv") else real_exists(path)):
+        with TestClient(app):
+            pass
+
+    with Session(engine) as session:
+        job = session.get(EnrichmentJob, job_id)
+        assert job.status == "failed"
+        assert job.error_summary == "Interrupted by server restart"
+    SQLModel.metadata.drop_all(engine)
+
 @pytest.mark.asyncio
 async def test_process_enrichment_marks_job_failed_on_crash(client):
     with Session(engine) as session:
