@@ -11,6 +11,7 @@ import tempfile
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select, col, or_
+from sqlalchemy import case
 
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
@@ -352,11 +353,18 @@ async def auto_tag_games(session: Session = Depends(get_session)):
 MAX_ENRICH_ATTEMPTS = 5
 
 def enrichment_candidates_query(limit: int):
+    # Games the user is actually playing get enriched first, then the queue,
+    # then the rest of the library — not whatever happens to have the lowest id
+    status_priority = case(
+        (Game.status == GameStatus.PLAYING, 0),
+        (Game.status == GameStatus.UP_NEXT, 1),
+        else_=2,
+    )
     return select(Game).where(
         ((Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None) | (Game.average_playtime == None))  # noqa: E711
         & (Game.platform == "steam")
         & (Game.enrich_attempts < MAX_ENRICH_ATTEMPTS)
-    ).limit(limit)
+    ).order_by(status_priority, col(Game.id)).limit(limit)
 
 PER_GAME_TIMEOUT = 120.0
 
