@@ -16,7 +16,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun, JournalEntry
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -168,6 +168,9 @@ class ManualGameCreate(BaseModel):
     platform: str
     genre: Optional[str] = None
     attention_level: Optional[AttentionLevel] = None
+
+class JournalEntryCreate(BaseModel):
+    text: str
 
 @app.get("/")
 async def root():
@@ -325,6 +328,9 @@ async def delete_game(app_id: int, session: Session = Depends(get_session)):
     events = session.exec(select(PlayEvent).where(PlayEvent.game_id == app_id)).all()
     for event in events:
         session.delete(event)
+    entries = session.exec(select(JournalEntry).where(JournalEntry.game_id == app_id)).all()
+    for entry in entries:
+        session.delete(entry)
     session.delete(game)
     session.commit()
     sync_recommender_with_db()
@@ -513,6 +519,75 @@ async def get_enrichment_job(job_id: int, session: Session = Depends(get_session
     if not job:
         raise HTTPException(status_code=404, detail="Enrichment job not found")
     return job
+
+# NOTE: this must stay below every literal "/games/..." GET route above — the int
+# converter on {app_id} would otherwise swallow paths like /games/enrich/jobs/current.
+@app.get("/games/{app_id}")
+async def get_game(app_id: int, session: Session = Depends(get_session)):
+    game = session.get(Game, app_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    entries = session.exec(
+        select(JournalEntry)
+        .where(JournalEntry.game_id == app_id)
+        .order_by(JournalEntry.created_at, JournalEntry.id)
+    ).all()
+
+    result = game.model_dump()
+    result["journal"] = [entry.model_dump() for entry in entries]
+    return result
+
+@app.post("/games/{app_id}/journal", response_model=JournalEntry)
+async def create_journal_entry(
+    app_id: int,
+    payload: JournalEntryCreate,
+    session: Session = Depends(get_session),
+):
+    game = session.get(Game, app_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Journal entry text cannot be empty")
+
+    entry = JournalEntry(game_id=app_id, text=payload.text.strip())
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
+
+@app.put("/games/{app_id}/journal/{entry_id}", response_model=JournalEntry)
+async def update_journal_entry(
+    app_id: int,
+    entry_id: int,
+    payload: JournalEntryCreate,
+    session: Session = Depends(get_session),
+):
+    entry = session.get(JournalEntry, entry_id)
+    if not entry or entry.game_id != app_id:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="Journal entry text cannot be empty")
+
+    entry.text = payload.text.strip()
+    session.add(entry)
+    session.commit()
+    session.refresh(entry)
+    return entry
+
+@app.delete("/games/{app_id}/journal/{entry_id}")
+async def delete_journal_entry(
+    app_id: int,
+    entry_id: int,
+    session: Session = Depends(get_session),
+):
+    entry = session.get(JournalEntry, entry_id)
+    if not entry or entry.game_id != app_id:
+        raise HTTPException(status_code=404, detail="Journal entry not found")
+
+    session.delete(entry)
+    session.commit()
+    return {"message": "Journal entry deleted."}
 
 def as_naive_utc(dt: datetime) -> datetime:
     """Datetimes round-trip through SQLite as naive UTC; normalize aware values too."""

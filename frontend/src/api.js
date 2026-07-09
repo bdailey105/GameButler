@@ -21,6 +21,26 @@ export const updateGame = async (appId, updates) => {
   return response.data;
 };
 
+export const fetchGameDetail = async (appId) => {
+  const response = await api.get(`/games/${appId}`);
+  return response.data;
+};
+
+export const addJournalEntry = async (appId, text) => {
+  const response = await api.post(`/games/${appId}/journal`, { text });
+  return response.data;
+};
+
+export const updateJournalEntry = async (appId, entryId, text) => {
+  const response = await api.put(`/games/${appId}/journal/${entryId}`, { text });
+  return response.data;
+};
+
+export const deleteJournalEntry = async (appId, entryId) => {
+  const response = await api.delete(`/games/${appId}/journal/${entryId}`);
+  return response.data;
+};
+
 export const deleteGame = async (appId) => {
   const response = await api.delete(`/games/${appId}`);
   return response.data;

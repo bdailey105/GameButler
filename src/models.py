@@ -1,6 +1,6 @@
 from typing import Optional
 from enum import Enum
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from sqlmodel import SQLModel, Field
 
 class GameStatus(str, Enum):
@@ -29,6 +29,10 @@ class GameBase(SQLModel):
     queue_position: Optional[int] = None
     average_playtime: Optional[int] = None  # minutes to beat (main story), None = not yet looked up, 0 = HLTB has no data
     enrich_attempts: int = Field(default=0)
+    personal_rating: Optional[int] = None  # 1-5; None = unrated
+    started_on: Optional[date] = None
+    completed_on: Optional[date] = None
+    current_note: Optional[str] = None  # concise "where I left off"
 
 class Game(GameBase, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -46,6 +50,10 @@ class GameUpdate(SQLModel):
     status: Optional[GameStatus] = None
     attention_level: Optional[AttentionLevel] = None
     queue_position: Optional[int] = None
+    personal_rating: Optional[int] = Field(default=None, ge=1, le=5)
+    started_on: Optional[date] = None
+    completed_on: Optional[date] = None
+    current_note: Optional[str] = None
 
 class QueueReorder(SQLModel):
     app_ids: list[int]
@@ -75,3 +83,9 @@ class PlayEvent(SQLModel, table=True):
     old_value: Optional[str] = None
     new_value: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class JournalEntry(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    text: str

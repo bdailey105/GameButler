@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame } from './api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry } from './api'
 import './App.css'
 
-function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre }) {
-  const platformLabels = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
+const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
+
+function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre, onOpenDetail }) {
+  const platformLabels = PLATFORM_LABELS
   const primaryTag = game.tags?.split(';')[0]
   const status = game.status || 'library'
   const attentionLevels = [
@@ -77,6 +79,9 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [],
             {action.label}
           </button>
         ))}
+        {onOpenDetail && (
+          <button className="action-btn" title="Details" onClick={() => onOpenDetail(game.id)}>ⓘ</button>
+        )}
         {onDelete && (
           <button className="action-btn danger" title="Remove from library" onClick={() => onDelete(game)}>✕</button>
         )}
@@ -107,6 +112,277 @@ function LoadingState({ label = 'Loading library...' }) {
   )
 }
 
+function StarRating({ value, onChange }) {
+  return (
+    <div className="star-rating" role="group" aria-label="Personal rating">
+      {[1, 2, 3, 4, 5].map(n => (
+        <button
+          key={n}
+          type="button"
+          className={`star-btn ${n <= (value || 0) ? 'filled' : ''}`}
+          onClick={() => onChange(value === n ? null : n)}
+          title={`${n} star${n > 1 ? 's' : ''}`}
+          aria-label={`Set rating to ${n} star${n > 1 ? 's' : ''}`}
+          aria-pressed={n <= (value || 0)}
+        >
+          ★
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function GameDetailDrawer({ appId, onClose, onGameChanged }) {
+  const [game, setGame] = useState(null)
+  const [journal, setJournal] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(null)
+
+  const [rating, setRating] = useState(null)
+  const [startedOn, setStartedOn] = useState('')
+  const [completedOn, setCompletedOn] = useState('')
+  const [note, setNote] = useState('')
+  const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
+  const [saveError, setSaveError] = useState('')
+
+  const [newEntry, setNewEntry] = useState('')
+  const [addingEntry, setAddingEntry] = useState(false)
+
+  const drawerRef = useRef(null)
+  const previouslyFocused = useRef(null)
+
+  useEffect(() => {
+    if (!appId) return
+    previouslyFocused.current = document.activeElement
+    setLoading(true)
+    setLoadError(null)
+    fetchGameDetail(appId)
+      .then(data => {
+        setGame(data)
+        setJournal(data.journal || [])
+        setRating(data.personal_rating ?? null)
+        setStartedOn(data.started_on || '')
+        setCompletedOn(data.completed_on || '')
+        setNote(data.current_note || '')
+        setSaveState('idle')
+      })
+      .catch(err => {
+        console.error(err)
+        setLoadError('Failed to load game details.')
+      })
+      .finally(() => setLoading(false))
+  }, [appId])
+
+  useEffect(() => {
+    if (appId && !loading && drawerRef.current) {
+      drawerRef.current.focus()
+    }
+  }, [appId, loading])
+
+  const handleClose = useCallback(() => {
+    onClose()
+    if (previouslyFocused.current && typeof previouslyFocused.current.focus === 'function') {
+      previouslyFocused.current.focus()
+    }
+  }, [onClose])
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClose()
+        return
+      }
+      if (e.key === 'Tab' && drawerRef.current) {
+        const focusable = drawerRef.current.querySelectorAll(
+          'button:not(:disabled), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        )
+        if (focusable.length === 0) return
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault()
+          last.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault()
+          first.focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [handleClose])
+
+  const handleMove = async (status) => {
+    try {
+      const updated = await updateGame(appId, { status })
+      setGame(updated)
+      onGameChanged?.()
+    } catch (err) {
+      console.error('Failed to update game status:', err)
+    }
+  }
+
+  const handleSaveContext = async () => {
+    setSaveState('saving')
+    setSaveError('')
+    try {
+      const updated = await updateGame(appId, {
+        personal_rating: rating,
+        started_on: startedOn || null,
+        completed_on: completedOn || null,
+        current_note: note || null,
+      })
+      setGame(updated)
+      setSaveState('saved')
+      onGameChanged?.()
+      setTimeout(() => setSaveState('idle'), 2500)
+    } catch (err) {
+      console.error(err)
+      setSaveState('error')
+      setSaveError(err.response?.data?.detail || 'Failed to save changes.')
+    }
+  }
+
+  const handleAddEntry = async () => {
+    if (!newEntry.trim() || addingEntry) return
+    setAddingEntry(true)
+    try {
+      const entry = await addJournalEntry(appId, newEntry.trim())
+      setJournal(prev => [...prev, entry])
+      setNewEntry('')
+    } catch (err) {
+      console.error('Failed to add journal entry:', err)
+    } finally {
+      setAddingEntry(false)
+    }
+  }
+
+  const handleDeleteEntry = async (entryId) => {
+    if (!window.confirm('Delete this journal entry?')) return
+    try {
+      await deleteJournalEntry(appId, entryId)
+      setJournal(prev => prev.filter(entry => entry.id !== entryId))
+    } catch (err) {
+      console.error('Failed to delete journal entry:', err)
+    }
+  }
+
+  const status = game?.status || 'library'
+  const statusActions = [
+    { label: '▶ Play now', status: 'playing', className: 'primary' },
+    { label: '+ Up Next', status: 'up_next', className: 'secondary' },
+    { label: '↩ Back to Library', status: 'library', className: 'secondary' }
+  ].filter(action => action.status !== status)
+
+  return (
+    <>
+      <div className="drawer-overlay" onClick={handleClose} />
+      <div
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={game?.name ? `${game.name} details` : 'Game details'}
+        tabIndex={-1}
+        ref={drawerRef}
+      >
+        <button className="action-btn drawer-close" title="Close" onClick={handleClose}>✕</button>
+
+        {loading && <LoadingState label="Loading game..." />}
+        {!loading && loadError && <div className="error-card">{loadError}</div>}
+
+        {!loading && !loadError && game && (
+          <>
+            <div className="drawer-header">
+              {game.header_image ? (
+                <img className="drawer-art" src={game.header_image} alt="" />
+              ) : (
+                <div className="drawer-art drawer-art-placeholder">{game.name?.slice(0, 1) || '?'}</div>
+              )}
+              <h2 className="drawer-title">{game.name}</h2>
+              <div className="game-meta">
+                {game.genre && <span className="badge">{game.genre}</span>}
+                {game.platform && <span className="badge secondary">{PLATFORM_LABELS[game.platform] || game.platform}</span>}
+              </div>
+              {game.short_description && <p className="drawer-description">{game.short_description}</p>}
+            </div>
+
+            {statusActions.length > 0 && (
+              <div className="drawer-status-actions">
+                {statusActions.map(action => (
+                  <button
+                    key={action.status}
+                    className={`action-btn ${action.className}`}
+                    onClick={() => handleMove(action.status)}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <section className="drawer-section">
+              <h3>Personal Context</h3>
+              <div className="drawer-field">
+                <label>Rating</label>
+                <StarRating value={rating} onChange={setRating} />
+              </div>
+              <div className="drawer-date-row">
+                <div className="drawer-field">
+                  <label>Started</label>
+                  <input type="date" value={startedOn} onChange={(e) => setStartedOn(e.target.value)} />
+                </div>
+                <div className="drawer-field">
+                  <label>Completed</label>
+                  <input type="date" value={completedOn} onChange={(e) => setCompletedOn(e.target.value)} />
+                </div>
+              </div>
+              <div className="drawer-field">
+                <label>Notes</label>
+                <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What do you think so far?" />
+              </div>
+              <div className="drawer-save-row">
+                <button className="primary-btn" onClick={handleSaveContext} disabled={saveState === 'saving'}>
+                  {saveState === 'saving' ? 'Saving...' : 'Save'}
+                </button>
+                {saveState === 'saved' && <span className="success-msg">Saved</span>}
+                {saveState === 'error' && <span className="drawer-error-text">{saveError}</span>}
+              </div>
+            </section>
+
+            <section className="drawer-section">
+              <h3>Journal</h3>
+              <div className="journal-list">
+                {journal.length === 0 && <p className="empty-hint">No journal entries yet.</p>}
+                {journal.map(entry => (
+                  <div className="journal-entry" key={entry.id}>
+                    <div className="journal-entry-header">
+                      <span className="journal-date">{new Date(entry.created_at).toLocaleDateString()}</span>
+                      <button className="action-btn danger journal-delete" title="Delete entry" onClick={() => handleDeleteEntry(entry.id)}>✕</button>
+                    </div>
+                    <p className="journal-text">{entry.text}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="journal-add">
+                <textarea
+                  rows={2}
+                  value={newEntry}
+                  onChange={(e) => setNewEntry(e.target.value)}
+                  placeholder="Add a journal entry..."
+                />
+                <button className="secondary-btn" onClick={handleAddEntry} disabled={!newEntry.trim() || addingEntry}>
+                  {addingEntry ? 'Adding...' : 'Add entry'}
+                </button>
+              </div>
+            </section>
+          </>
+        )}
+      </div>
+    </>
+  )
+}
+
 function ConciergeView({ loading, error, getRec, recommendation }) {
   const [genre, setGenre] = useState('')
   const [tag, setTag] = useState('')
@@ -115,6 +391,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [attention, setAttention] = useState('')
   const [mood, setMood] = useState('')
   const [actedOn, setActedOn] = useState({})
+  const [lastRecommendation, setLastRecommendation] = useState(recommendation)
   const moods = [
     { value: 'zone_out', label: 'Zone out', hint: 'Low friction' },
     { value: 'story_night', label: 'Story night', hint: 'Focused' },
@@ -123,9 +400,10 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     { value: 'surprise_me', label: 'Surprise me', hint: 'Wildcard' }
   ]
 
-  useEffect(() => {
+  if (recommendation !== lastRecommendation) {
+    setLastRecommendation(recommendation)
     setActedOn({})
-  }, [recommendation])
+  }
 
   const handleAct = async (appId, status) => {
     try {
@@ -275,7 +553,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   )
 }
 
-function DashboardView({ games, onMove, onAttentionChange }) {
+function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
   const [activity, setActivity] = useState(null)
 
   useEffect(() => {
@@ -297,12 +575,13 @@ function DashboardView({ games, onMove, onAttentionChange }) {
               <GameCard 
                 key={game.id} 
                 game={game} 
-                onMove={onMove} 
+                onMove={onMove}
                 onAttentionChange={onAttentionChange}
+                onOpenDetail={onOpenDetail}
                 actions={[
                   { label: 'Completed', status: 'completed', className: 'success' },
                   { label: 'Drop', status: 'library', className: 'warning' }
-                ]} 
+                ]}
               />
             ))}
             {playing.length === 0 && (
@@ -320,6 +599,7 @@ function DashboardView({ games, onMove, onAttentionChange }) {
                 game={game}
                 onMove={onMove}
                 onAttentionChange={onAttentionChange}
+                onOpenDetail={onOpenDetail}
                 actions={[
                   { label: 'Start Playing', status: 'playing', className: 'primary' },
                   { label: 'Remove', status: 'library', className: 'secondary' }
@@ -379,7 +659,7 @@ function timeAgo(iso) {
   return `${Math.floor(mins / 1440)}d ago`
 }
 
-function LibraryView({ onMove, onAttentionChange }) {
+function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
   const [games, setGames] = useState([])
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
@@ -627,6 +907,7 @@ function LibraryView({ onMove, onAttentionChange }) {
               actions={[{ label: 'Add to Up Next', status: 'up_next', className: 'primary' }]}
               onDelete={handleDelete}
               onEditGenre={handleEditGenre}
+              onOpenDetail={onOpenDetail}
             />
           ))}
           {games.length === 0 && (
@@ -638,7 +919,7 @@ function LibraryView({ onMove, onAttentionChange }) {
   )
 }
 
-function BacklogView({ onMove, onAttentionChange }) {
+function BacklogView({ onMove, onAttentionChange, onOpenDetail }) {
   const [games, setGames] = useState([])
   const [loading, setLoading] = useState(false)
   const statuses = [
@@ -718,6 +999,7 @@ function BacklogView({ onMove, onAttentionChange }) {
                         const updated = await onAttentionChange(id, level)
                         if (updated) setGames(prev => prev.map(g => g.id === id ? updated : g))
                       }}
+                      onOpenDetail={onOpenDetail}
                       queueActions={column.key === 'up_next' ? [
                         {
                           label: '↑',
@@ -886,6 +1168,7 @@ function App() {
   const [recommendation, setRecommendation] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [detailAppId, setDetailAppId] = useState(null)
 
   useEffect(() => {
     loadLibraryCount()
@@ -944,6 +1227,13 @@ function App() {
     }
   }
 
+  const handleGameChanged = () => {
+    loadLibraryCount()
+    if (currentView === 'dashboard') {
+      loadDashboard()
+    }
+  }
+
   const handleGetRec = async (params) => {
     setLoading(true)
     setError(null)
@@ -989,28 +1279,39 @@ function App() {
           />
         )}
         {currentView === 'dashboard' && (
-          <DashboardView 
-            games={dashboardGames} 
-            onMove={handleMove} 
+          <DashboardView
+            games={dashboardGames}
+            onMove={handleMove}
             onAttentionChange={handleAttentionChange}
+            onOpenDetail={setDetailAppId}
           />
         )}
         {currentView === 'library' && (
-          <LibraryView 
-            onMove={handleMove} 
+          <LibraryView
+            onMove={handleMove}
             onAttentionChange={handleAttentionChange}
+            onOpenDetail={setDetailAppId}
           />
         )}
         {currentView === 'backlog' && (
           <BacklogView
             onMove={handleMove}
             onAttentionChange={handleAttentionChange}
+            onOpenDetail={setDetailAppId}
           />
         )}
         {currentView === 'upload' && (
           <UploadView onUploaded={loadLibraryCount} />
         )}
       </main>
+
+      {detailAppId && (
+        <GameDetailDrawer
+          appId={detailAppId}
+          onClose={() => setDetailAppId(null)}
+          onGameChanged={handleGameChanged}
+        />
+      )}
     </div>
   )
 }

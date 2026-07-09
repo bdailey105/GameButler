@@ -4,7 +4,7 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -1055,3 +1055,189 @@ async def test_process_enrichment_increments_attempts(client):
     with Session(engine) as session:
         game = session.get(Game, 1)
         assert game.enrich_attempts == 1
+
+def test_enrich_jobs_current_route_not_shadowed_by_game_detail_route(client):
+    """Regression: GET /games/{app_id} uses an int converter and must be declared
+    after every literal /games/... GET route, or 'enrich' fails int conversion."""
+    response = client.get("/games/enrich/jobs/current")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No enrichment job found"
+
+def test_get_game_detail_empty_journal(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.get("/games/1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["name"] == "Game A"
+    assert data["journal"] == []
+    assert data["personal_rating"] is None
+    assert data["started_on"] is None
+    assert data["completed_on"] is None
+    assert data["current_note"] is None
+
+def test_get_game_detail_unknown_game(client):
+    response = client.get("/games/999")
+    assert response.status_code == 404
+
+def test_get_game_detail_journal_chronological_order(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        session.add(JournalEntry(game_id=1, text="First", created_at=base))
+        session.add(JournalEntry(game_id=1, text="Second", created_at=base + timedelta(days=1)))
+        session.add(JournalEntry(game_id=1, text="Third", created_at=base + timedelta(days=2)))
+        session.commit()
+
+    response = client.get("/games/1")
+    assert response.status_code == 200
+    texts = [entry["text"] for entry in response.json()["journal"]]
+    assert texts == ["First", "Second", "Third"]
+
+def test_journal_entry_crud_happy_path(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/games/1/journal", json={"text": "Started the game."})
+    assert response.status_code == 200
+    entry = response.json()
+    assert entry["text"] == "Started the game."
+    assert entry["game_id"] == 1
+    entry_id = entry["id"]
+
+    response = client.get("/games/1")
+    assert [e["text"] for e in response.json()["journal"]] == ["Started the game."]
+
+    response = client.put(f"/games/1/journal/{entry_id}", json={"text": "Updated note."})
+    assert response.status_code == 200
+    assert response.json()["text"] == "Updated note."
+
+    response = client.get("/games/1")
+    assert [e["text"] for e in response.json()["journal"]] == ["Updated note."]
+
+    response = client.delete(f"/games/1/journal/{entry_id}")
+    assert response.status_code == 200
+
+    response = client.get("/games/1")
+    assert response.json()["journal"] == []
+
+def test_journal_entry_create_blank_text_rejected(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/games/1/journal", json={"text": "   "})
+    assert response.status_code == 400
+
+def test_journal_entry_create_unknown_game(client):
+    response = client.post("/games/999/journal", json={"text": "Hello"})
+    assert response.status_code == 404
+
+def test_journal_entry_update_blank_text_rejected(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/games/1/journal", json={"text": "Original"})
+    entry_id = response.json()["id"]
+
+    response = client.put(f"/games/1/journal/{entry_id}", json={"text": ""})
+    assert response.status_code == 400
+
+def test_journal_entry_update_unknown_entry(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.put("/games/1/journal/999", json={"text": "Anything"})
+    assert response.status_code == 404
+
+def test_journal_entry_update_mismatched_game(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.add(Game(id=2, name="Game B", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/games/1/journal", json={"text": "Belongs to game 1"})
+    entry_id = response.json()["id"]
+
+    response = client.put(f"/games/2/journal/{entry_id}", json={"text": "Hijack attempt"})
+    assert response.status_code == 404
+
+def test_journal_entry_delete_unknown_entry(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.delete("/games/1/journal/999")
+    assert response.status_code == 404
+
+def test_journal_entry_delete_mismatched_game(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.add(Game(id=2, name="Game B", playtime_forever=0))
+        session.commit()
+
+    response = client.post("/games/1/journal", json={"text": "Belongs to game 1"})
+    entry_id = response.json()["id"]
+
+    response = client.delete(f"/games/2/journal/{entry_id}")
+    assert response.status_code == 404
+
+def test_update_game_sets_personal_context(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.put("/games/1", json={
+        "personal_rating": 5,
+        "started_on": "2026-01-01",
+        "completed_on": "2026-02-01",
+        "current_note": "Left off at the final dungeon.",
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["personal_rating"] == 5
+    assert data["started_on"] == "2026-01-01"
+    assert data["completed_on"] == "2026-02-01"
+    assert data["current_note"] == "Left off at the final dungeon."
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.personal_rating == 5
+        assert game.current_note == "Left off at the final dungeon."
+
+def test_update_game_rejects_out_of_range_rating(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    assert client.put("/games/1", json={"personal_rating": 0}).status_code == 422
+    assert client.put("/games/1", json={"personal_rating": 6}).status_code == 422
+
+def test_update_game_rejects_invalid_date(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    response = client.put("/games/1", json={"started_on": "not-a-date"})
+    assert response.status_code == 422
+
+def test_delete_game_removes_journal_entries(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+
+    client.post("/games/1/journal", json={"text": "Some note."})
+
+    response = client.delete("/games/1")
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        entries = session.exec(select(JournalEntry).where(JournalEntry.game_id == 1)).all()
+        assert entries == []
