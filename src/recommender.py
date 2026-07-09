@@ -2,6 +2,11 @@ import pandas as pd
 from typing import Optional
 from src.models import GameStatus, AttentionLevel
 
+def _format_hours(minutes) -> str:
+    """Render a minutes value as a human-friendly hours label, e.g. '5h' or '<1h'."""
+    hours = round((minutes or 0) / 60)
+    return "<1h" if hours == 0 else f"{hours}h"
+
 class GameRecommender:
     def __init__(self, df: pd.DataFrame):
         self.df = df
@@ -95,6 +100,14 @@ class GameRecommender:
             for idx in scored.index[mask]:
                 scored.at[idx, "_reasons"] = scored.at[idx, "_reasons"] + [reason]
 
+        def add_score(mask, points: int):
+            scored.loc[mask, "_score"] += points
+
+        def add_dynamic_reason(mask, points: int, make_reason):
+            scored.loc[mask, "_score"] += points
+            for idx in scored.index[mask]:
+                scored.at[idx, "_reasons"] = scored.at[idx, "_reasons"] + [make_reason(scored.loc[idx])]
+
         if "status" in scored.columns:
             status = self.normalize_values(scored["status"])
             add_reason(status == GameStatus.UP_NEXT.value, 30, "Already in your Up Next queue")
@@ -106,7 +119,11 @@ class GameRecommender:
         if unplayed_only:
             add_reason(scored["Playtime_Forever"] == 0, 15, "You asked for something unplayed")
         else:
-            add_reason(scored["Playtime_Forever"] > 0, 8, "You have some history with it")
+            add_dynamic_reason(
+                scored["Playtime_Forever"] > 0,
+                8,
+                lambda row: f"You've already put in {_format_hours(row['Playtime_Forever'])}",
+            )
             add_reason(scored["Playtime_Forever"] == 0, 5, "Fresh start from your library")
 
         if genre:
@@ -123,7 +140,7 @@ class GameRecommender:
             add_reason(length_mask, 10, "Fits your session length")
 
         if mood:
-            self.apply_mood_score(scored, add_reason, mood)
+            self.apply_mood_score(scored, add_reason, add_score, add_dynamic_reason, mood)
 
         empty_reasons = scored["_reasons"].apply(len) == 0
         for idx in scored.index[empty_reasons]:
@@ -145,7 +162,7 @@ class GameRecommender:
     def normalize_values(self, series: pd.Series) -> pd.Series:
         return series.map(lambda value: getattr(value, "value", value)).astype(str)
 
-    def apply_mood_score(self, scored: pd.DataFrame, add_reason, mood: str):
+    def apply_mood_score(self, scored: pd.DataFrame, add_reason, add_score, add_dynamic_reason, mood: str):
         empty = pd.Series("", index=scored.index)
         zero = pd.Series(0, index=scored.index)
         genre_tags = scored.get("Genre", empty).astype(str) + " " + scored.get("Tags", empty).astype(str)
@@ -156,16 +173,27 @@ class GameRecommender:
 
         if mood == "zone_out":
             add_reason(attention == AttentionLevel.CASUAL.value, 20, "Mood: good for zoning out")
-            add_reason(genre_tags.str.contains("Casual|Arcade|Roguelike|Simulation|Farming", case=False, na=False), 12, "Mood: low-friction tags")
+            add_reason(genre_tags.str.contains("Casual|Arcade|Relaxing|Simulation|Farming|Sandbox|Building|City Builder|Management|Automation|Driving|Racing|Idle", case=False, na=False), 12, "Mood: low-friction tags")
         elif mood == "story_night":
             add_reason(attention == AttentionLevel.FOCUSED.value, 20, "Mood: focused story session")
-            add_reason(genre_tags.str.contains("Story|RPG|Adventure|Narrative", case=False, na=False), 12, "Mood: story-friendly genre or tags")
+            add_reason(genre_tags.str.contains("Story|RPG|Adventure|Narrative|Atmospheric|Choices Matter|Visual Novel|Walking Simulator|Mystery|Drama", case=False, na=False), 12, "Mood: story-friendly genre or tags")
         elif mood == "short_session":
-            add_reason(average.between(1, 300), 22, "Mood: fits a short session")
-            add_reason(genre_tags.str.contains("Roguelike|Arcade|Puzzle|Casual", case=False, na=False), 8, "Mood: easy to play in bursts")
+            add_dynamic_reason(
+                average.between(1, 300),
+                22,
+                lambda row: f"~{_format_hours(row['Average_Playtime'])} to beat — fits a short session",
+            )
+            add_score(average > 1200, -15)
+            add_reason(genre_tags.str.contains("Roguelike|Roguelite|Arcade|Puzzle|Casual|Platformer|Card Game|Bullet Hell|Fast-Paced", case=False, na=False), 8, "Mood: easy to play in bursts")
         elif mood == "finish_something":
             add_reason(status.isin([GameStatus.PLAYING.value, GameStatus.UP_NEXT.value]), 20, "Mood: already on your active list")
             add_reason(playtime > 0, 12, "Mood: you have already made progress")
+            remaining = (average - playtime).clip(lower=0)
+            add_dynamic_reason(
+                (average > 0) & (remaining <= 720),
+                15,
+                lambda row: f"~{_format_hours(max(row['Average_Playtime'] - row['Playtime_Forever'], 0))} left to finish",
+            )
         elif mood == "surprise_me":
             add_reason(pd.Series(True, index=scored.index), 3, "Mood: surprise pick from eligible games")
 

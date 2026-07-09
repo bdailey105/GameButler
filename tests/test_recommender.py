@@ -163,3 +163,83 @@ def test_mood_does_not_override_explicit_attention_filter(sample_df):
     game = recommender.recommend(mood='zone_out', attention_level='focused')
 
     assert game['attention_level'] == AttentionLevel.FOCUSED
+
+MOOD_SCORING_CASES = [
+    pytest.param(
+        "zone_out",
+        [
+            {"Name": "Chill Builder", "Genre": "Simulation", "Tags": "Relaxing;City Builder"},
+            {"Name": "Generic Game", "Genre": "Action", "Tags": "Shooter"},
+        ],
+        "Chill Builder",
+        id="zone_out_prefers_relaxing_city_builder_tags",
+    ),
+    pytest.param(
+        "story_night",
+        [
+            {"Name": "Story Weaver", "Genre": "RPG", "Tags": "Story Rich;Choices Matter"},
+            {"Name": "Gun Fight", "Genre": "Action", "Tags": "Shooter"},
+        ],
+        "Story Weaver",
+        id="story_night_prefers_narrative_tags",
+    ),
+    pytest.param(
+        "short_session",
+        [
+            {"Name": "Quick Puzzle", "Genre": "Puzzle", "Tags": "Puzzle", "Average_Playtime": 120},
+            {"Name": "Long Puzzle", "Genre": "Puzzle", "Tags": "Puzzle", "Average_Playtime": 3600},
+        ],
+        "Quick Puzzle",
+        id="short_session_prefers_short_hltb_over_identical_tags",
+    ),
+    pytest.param(
+        "short_session",
+        [
+            {"Name": "Big RPG", "Genre": "RPG", "Tags": "Adventure", "Average_Playtime": 1500},
+            {"Name": "Mystery Game", "Genre": "RPG", "Tags": "Adventure", "Average_Playtime": 0},
+        ],
+        "Mystery Game",
+        id="short_session_long_game_penalty_loses_to_no_hltb_data",
+    ),
+    pytest.param(
+        "finish_something",
+        [
+            {
+                "Name": "Almost Done",
+                "Playtime_Forever": 60,
+                "Average_Playtime": 240,
+                "status": GameStatus.PLAYING,
+            },
+            {
+                "Name": "Just Started",
+                "Playtime_Forever": 60,
+                "Average_Playtime": 4860,
+                "status": GameStatus.PLAYING,
+            },
+        ],
+        "Almost Done",
+        id="finish_something_prefers_less_remaining_time",
+    ),
+]
+
+@pytest.mark.parametrize("mood, games, expected_winner", MOOD_SCORING_CASES)
+def test_mood_scoring_picks_expected_winner(mood, games, expected_winner):
+    defaults = {
+        "Playtime_Forever": 0,
+        "Average_Playtime": 0,
+        "Genre": "",
+        "Tags": "",
+        "status": GameStatus.LIBRARY,
+        "attention_level": AttentionLevel.UNSET,
+    }
+    rows = []
+    for i, game in enumerate(games):
+        row = {**defaults, **game}
+        row["AppID"] = i + 1
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    recommender = GameRecommender(df)
+
+    result = recommender.recommend(mood=mood)
+
+    assert result['Name'] == expected_winner
