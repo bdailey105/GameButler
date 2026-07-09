@@ -172,6 +172,20 @@ def add_game_personal_context_columns(connection):
     if "current_note" not in columns:
         connection.exec_driver_sql("ALTER TABLE game ADD COLUMN current_note TEXT")
 
+def add_game_session_tags_column(connection):
+    tables = {
+        row[0]
+        for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if "game" not in tables:
+        return
+
+    columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+    if "session_tags" not in columns:
+        connection.exec_driver_sql("ALTER TABLE game ADD COLUMN session_tags TEXT")
+
 MIGRATIONS = (
     ("20260706_001_game_rich_metadata", add_game_rich_metadata_columns),
     ("20260706_002_game_queue_position", add_game_queue_position_column),
@@ -181,6 +195,7 @@ MIGRATIONS = (
     ("20260708_005_game_attention_source", add_game_attention_source_column),
     ("20260709_006_game_enrich_attempts", add_game_enrich_attempts_column),
     ("20260709_007_game_personal_context", add_game_personal_context_columns),
+    ("20260709_008_game_session_tags", add_game_session_tags_column),
 )
 
 def get_session() -> Generator[Session, None, None]:

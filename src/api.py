@@ -964,6 +964,9 @@ async def recommend_game(
     length: Optional[str] = Query(None, pattern="^(short|medium|long)$"),
     attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$"),
     mood: Optional[str] = Query(None, pattern="^(zone_out|story_night|short_session|finish_something|surprise_me)$"),
+    available_minutes: Optional[int] = Query(None, ge=5, le=600),
+    energy: Optional[str] = Query(None, pattern="^(low|medium|high)$"),
+    context: Optional[str] = Query(None, pattern="^(desk|couch|handheld|podcast)$"),
     count: int = Query(1, ge=1, le=5)
 ):
     if recommender is None or recommender.df.empty:
@@ -988,7 +991,10 @@ async def recommend_game(
         min_length=min_len,
         max_length=max_len,
         attention_level=attention_level,
-        mood=mood
+        mood=mood,
+        available_minutes=available_minutes,
+        energy=energy,
+        context=context,
     )
 
     if not games:

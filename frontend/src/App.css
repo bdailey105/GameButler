@@ -241,6 +241,81 @@ h2 {
   gap: var(--space-2);
 }
 
+.planner-section {
+  margin-bottom: var(--space-5);
+}
+
+.planner-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.planner-chip {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+}
+
+.planner-chip:hover {
+  border-color: var(--brand-primary);
+  color: var(--text-primary);
+}
+
+.planner-chip.active {
+  border-color: var(--brand-primary);
+  background: var(--brand-tint);
+  color: var(--brand-light);
+}
+
+.planner-reset {
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  text-decoration: underline;
+  padding: 0;
+  margin-top: var(--space-1);
+}
+
+.planner-reset:hover {
+  color: var(--text-secondary);
+}
+
+.advanced-filters {
+  margin-bottom: var(--space-4);
+}
+
+.advanced-filters summary {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.advanced-filters .filter-grid {
+  padding-top: var(--space-3);
+}
+
+.advanced-filters .filter-group.checkbox {
+  padding-top: var(--space-1);
+}
+
+.session-summary {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
 input[type="text"],
 input[type="date"],
 select,

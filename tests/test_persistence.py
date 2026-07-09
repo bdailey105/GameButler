@@ -123,6 +123,7 @@ def test_migrations_are_recorded_and_idempotent():
         ("20260708_005_game_attention_source",),
         ("20260709_006_game_enrich_attempts",),
         ("20260709_007_game_personal_context",),
+        ("20260709_008_game_session_tags",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
@@ -134,6 +135,7 @@ def test_migrations_are_recorded_and_idempotent():
     assert "started_on" in columns
     assert "completed_on" in columns
     assert "current_note" in columns
+    assert "session_tags" in columns
 
 def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     """Regression: adding a column to an already-applied migration never runs.
@@ -251,6 +253,48 @@ def test_game_personal_context_persists(session: Session):
     assert result.started_on == date(2026, 1, 1)
     assert result.completed_on == date(2026, 2, 1)
     assert result.current_note == "Stuck on the final boss."
+
+def test_session_tags_migration_runs_on_db_with_earlier_migrations_applied():
+    """Regression: adding a column to an already-applied migration never runs.
+    Simulates a production DB where earlier migrations are recorded but the new
+    session_tags column is missing."""
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever) VALUES (1, 'Existing Game', 42)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+        session_tags = connection.exec_driver_sql(
+            "SELECT session_tags FROM game WHERE id = 1"
+        ).scalar()
+
+    assert "session_tags" in columns
+    assert session_tags is None
+
+def test_game_session_tags_persists(session: Session):
+    game = Game(
+        id=1,
+        name="Test Game",
+        playtime_forever=100,
+        session_tags="burst_friendly;controller_only",
+    )
+    session.add(game)
+    session.commit()
+
+    result = session.get(Game, 1)
+    assert result.session_tags == "burst_friendly;controller_only"
 
 def test_journal_entries_persist_and_round_trip(session: Session):
     from src.models import JournalEntry

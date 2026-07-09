@@ -20,7 +20,10 @@ class GameRecommender:
                   min_length: Optional[int] = None,
                   max_length: Optional[int] = None,
                   attention_level: Optional[str] = None,
-                  mood: Optional[str] = None
+                  mood: Optional[str] = None,
+                  available_minutes: Optional[int] = None,
+                  energy: Optional[str] = None,
+                  context: Optional[str] = None
                   ) -> Optional[pd.Series]:
         """
         Returns the highest-scoring game matching the criteria.
@@ -32,6 +35,9 @@ class GameRecommender:
             min_length: Minimum Average_Playtime (minutes).
             max_length: Maximum Average_Playtime (minutes).
             attention_level: Filter by specific attention level (casual, focused).
+            available_minutes: Tonight's available session length (minutes); scoring only.
+            energy: Tonight's energy level (low, medium, high); scoring only.
+            context: Tonight's play context (desk, couch, handheld, podcast); scoring only.
         """
         rows = self.recommend_many(
             1,
@@ -42,6 +48,9 @@ class GameRecommender:
             max_length=max_length,
             attention_level=attention_level,
             mood=mood,
+            available_minutes=available_minutes,
+            energy=energy,
+            context=context,
         )
         return rows[0] if rows else None
 
@@ -53,7 +62,10 @@ class GameRecommender:
                         min_length: Optional[int] = None,
                         max_length: Optional[int] = None,
                         attention_level: Optional[str] = None,
-                        mood: Optional[str] = None
+                        mood: Optional[str] = None,
+                        available_minutes: Optional[int] = None,
+                        energy: Optional[str] = None,
+                        context: Optional[str] = None
                         ) -> list:
         """
         Returns up to n highest-scoring games matching the criteria, sorted best-first.
@@ -66,6 +78,9 @@ class GameRecommender:
             min_length: Minimum Average_Playtime (minutes).
             max_length: Maximum Average_Playtime (minutes).
             attention_level: Filter by specific attention level (casual, focused).
+            available_minutes: Tonight's available session length (minutes); scoring only.
+            energy: Tonight's energy level (low, medium, high); scoring only.
+            context: Tonight's play context (desk, couch, handheld, podcast); scoring only.
         """
         if self.df.empty:
             return []
@@ -113,6 +128,9 @@ class GameRecommender:
             max_length=max_length,
             attention_level=attention_level,
             mood=mood,
+            available_minutes=available_minutes,
+            energy=energy,
+            context=context,
         )
         return [row for _, row in scored_df.head(n).iterrows()]
 
@@ -124,7 +142,10 @@ class GameRecommender:
                     min_length: Optional[int] = None,
                     max_length: Optional[int] = None,
                     attention_level: Optional[str] = None,
-                    mood: Optional[str] = None
+                    mood: Optional[str] = None,
+                    available_minutes: Optional[int] = None,
+                    energy: Optional[str] = None,
+                    context: Optional[str] = None
                     ) -> pd.DataFrame:
         """Score already-filtered games using deterministic concierge signals."""
         scored = df.copy()
@@ -179,6 +200,12 @@ class GameRecommender:
 
         if mood:
             self.apply_mood_score(scored, add_reason, add_score, add_dynamic_reason, mood)
+
+        if available_minutes is not None or energy or context:
+            self.apply_session_score(
+                scored, add_reason, add_score, add_dynamic_reason,
+                available_minutes=available_minutes, energy=energy, context=context,
+            )
 
         self.apply_feedback_score(scored, add_reason, add_score)
 
@@ -236,6 +263,92 @@ class GameRecommender:
             )
         elif mood == "surprise_me":
             add_reason(pd.Series(True, index=scored.index), 3, "Mood: surprise pick from eligible games")
+
+    def apply_session_score(self, scored: pd.DataFrame, add_reason, add_score, add_dynamic_reason,
+                             available_minutes: Optional[int] = None,
+                             energy: Optional[str] = None,
+                             context: Optional[str] = None):
+        """Apply tonight's session-planning adjustments: available time, energy, and setting.
+
+        These are score-only nudges — they never filter out a game. The explicit
+        genre/tag/length/attention filters in recommend_many already ran before
+        scoring begins, so they take precedence over session inputs by construction;
+        session inputs can only reorder among games that already survived those filters.
+
+        Effects:
+
+        | Input              | Condition                                                | Effect                                                        |
+        |--------------------|-----------------------------------------------------------|----------------------------------------------------------------|
+        | available_minutes  | 0 < Average_Playtime <= available_minutes                  | +20, "Session: finishable tonight (~Xh to beat)"                |
+        |                    | available_minutes <= 30 & burst-friendly tags               | +10, "Session: easy to dip into"                                |
+        |                    | available_minutes <= 60 & Average_Playtime > 1200           | -12 (no reason; a caution, not a claim)                         |
+        |                    | Average_Playtime is null or 0 (unknown)                     | -4 (confidence penalty; never claims a fit it can't know)       |
+        | energy=low         | attention_level == casual                                   | +10, "Session: low-energy friendly"                             |
+        |                    | Relaxing/Casual/Sandbox/Farming/Driving tags                 | +8, "Session: gentle tags for a tired night"                    |
+        | energy=high        | attention_level == focused                                   | +10, "Session: worth your full focus"                           |
+        |                    | Challenging/Difficult/Souls-like/Strategy tags                | +8, "Session: demands your A-game"                              |
+        | energy=medium      | -                                                             | no adjustment                                                   |
+        | context=desk       | Strategy/4X/Management/City Builder/Simulation tags           | +8, "Session: mouse-and-keyboard fit"                           |
+        | context=couch      | Full controller support/Controller tags                       | +10, "Session: controller-friendly for the couch"               |
+        | context=handheld   | 2D/Platformer/Card Game/Casual/Pixel tags                      | +8, "Session: handheld-friendly"                                |
+        | context=podcast    | Grinding/Management/Simulation/Arcade/Racing/Sandbox tags       | +10, "Session: podcast-friendly grind"                          |
+        |                    | Story Rich/Narrative/Visual Novel tags                          | -6 (no reason; dialogue-heavy fights the podcast)                |
+
+        Suitability overrides (session_tags column, only applied when set and only when
+        the matching session input is chosen — untagged games get nothing):
+
+        | session_tags       | Condition                                | Effect                                                    |
+        |--------------------|--------------------------------------------|--------------------------------------------------------------|
+        | burst_friendly     | available_minutes <= 30                     | +15, "Session: you marked this burst-friendly"               |
+        | controller_only    | context in (couch, handheld)                | +12, "Session: you marked this controller-ready"             |
+        | podcast_friendly   | context == podcast                          | +15, "Session: you marked this podcast-friendly"             |
+        """
+        empty = pd.Series("", index=scored.index)
+        zero = pd.Series(0, index=scored.index)
+        genre_tags = scored.get("Genre", empty).astype(str) + " " + scored.get("Tags", empty).astype(str)
+        attention = self.normalize_values(scored.get("attention_level", empty))
+        average = scored.get("Average_Playtime", zero)
+        session_tags = scored.get("session_tags", empty).astype(str)
+
+        if available_minutes is not None:
+            add_dynamic_reason(
+                (average > 0) & (average <= available_minutes),
+                20,
+                lambda row: f"Session: finishable tonight (~{_format_hours(row['Average_Playtime'])} to beat)",
+            )
+            if available_minutes <= 30:
+                add_reason(
+                    genre_tags.str.contains("Roguelike|Roguelite|Arcade|Puzzle|Casual|Platformer|Card Game", case=False, na=False),
+                    10,
+                    "Session: easy to dip into",
+                )
+            if available_minutes <= 60:
+                add_score(average > 1200, -12)
+            add_score(average.isna() | (average == 0), -4)
+
+        if energy == "low":
+            add_reason(attention == AttentionLevel.CASUAL.value, 10, "Session: low-energy friendly")
+            add_reason(genre_tags.str.contains("Relaxing|Casual|Sandbox|Farming|Driving", case=False, na=False), 8, "Session: gentle tags for a tired night")
+        elif energy == "high":
+            add_reason(attention == AttentionLevel.FOCUSED.value, 10, "Session: worth your full focus")
+            add_reason(genre_tags.str.contains("Challenging|Difficult|Souls-like|Strategy", case=False, na=False), 8, "Session: demands your A-game")
+
+        if context == "desk":
+            add_reason(genre_tags.str.contains("Strategy|4X|Management|City Builder|Simulation", case=False, na=False), 8, "Session: mouse-and-keyboard fit")
+        elif context == "couch":
+            add_reason(genre_tags.str.contains("Full controller support|Controller", case=False, na=False), 10, "Session: controller-friendly for the couch")
+        elif context == "handheld":
+            add_reason(genre_tags.str.contains("2D|Platformer|Card Game|Casual|Pixel", case=False, na=False), 8, "Session: handheld-friendly")
+        elif context == "podcast":
+            add_reason(genre_tags.str.contains("Grinding|Management|Simulation|Arcade|Racing|Sandbox", case=False, na=False), 10, "Session: podcast-friendly grind")
+            add_score(genre_tags.str.contains("Story Rich|Narrative|Visual Novel", case=False, na=False), -6)
+
+        if available_minutes is not None and available_minutes <= 30:
+            add_reason(session_tags.str.contains("burst_friendly", case=False, na=False), 15, "Session: you marked this burst-friendly")
+        if context in ("couch", "handheld"):
+            add_reason(session_tags.str.contains("controller_only", case=False, na=False), 12, "Session: you marked this controller-ready")
+        if context == "podcast":
+            add_reason(session_tags.str.contains("podcast_friendly", case=False, na=False), 15, "Session: you marked this podcast-friendly")
 
     def apply_feedback_score(self, scored: pd.DataFrame, add_reason, add_score):
         """Apply preference-learning adjustments from recent recommendation decisions.
