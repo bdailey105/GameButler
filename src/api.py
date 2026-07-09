@@ -15,7 +15,7 @@ from sqlmodel import Session, select, col, or_
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -348,10 +348,14 @@ async def auto_tag_games(session: Session = Depends(get_session)):
     sync_recommender_with_db()
     return {"message": f"Successfully auto-tagged {count} games."}
 
+# ponytail: hard cap, no manual-retry override yet — bump attempts to 0 in DB to force retry
+MAX_ENRICH_ATTEMPTS = 5
+
 def enrichment_candidates_query(limit: int):
     return select(Game).where(
         ((Game.genre == "Unknown") | (Game.tags == "Unknown") | (Game.header_image == None) | (Game.average_playtime == None))  # noqa: E711
         & (Game.platform == "steam")
+        & (Game.enrich_attempts < MAX_ENRICH_ATTEMPTS)
     ).limit(limit)
 
 PER_GAME_TIMEOUT = 120.0
@@ -432,6 +436,8 @@ async def process_enrichment(job_id: int, limit: int):
                     job.processed += 1
                     job.updated_at = utc_now()
                     session.add(job)
+                    game.enrich_attempts += 1
+                    session.add(game)
                     session.commit()
 
             job.status = "failed" if job.failed else "completed"
@@ -550,6 +556,20 @@ async def activity_stats(limit: int = 20, session: Session = Depends(get_session
         "started_this_month": started_this_month,
         "finished_this_month": finished_this_month,
         "events": events,
+    }
+
+@app.get("/stats/automation")
+async def automation_stats(session: Session = Depends(get_session)):
+    last_sync = session.exec(
+        select(SyncRun).order_by(SyncRun.finished_at.desc())
+    ).first()
+    last_enrichment = session.exec(
+        select(EnrichmentJob).order_by(EnrichmentJob.created_at.desc())
+    ).first()
+
+    return {
+        "last_sync": last_sync.model_dump() if last_sync else None,
+        "last_enrichment": last_enrichment.model_dump() if last_enrichment else None,
     }
 
 def preview_import(df: pd.DataFrame, session: Session, filename: str) -> ImportPreviewResponse:
@@ -699,12 +719,15 @@ async def run_steam_sync(session: Session) -> dict:
 
     session.commit()
     sync_recommender_with_db()
-    return {
+    result = {
         "added": added,
         "updated": updated,
         "total": len(games),
         "message": f"Steam sync complete: {added} added, {updated} updated.",
     }
+    session.add(SyncRun(success=True, message=result["message"]))
+    session.commit()
+    return result
 
 def steam_sync_interval_seconds() -> Optional[int]:
     """None = auto-sync disabled (no creds or SYNC_INTERVAL_HOURS=0)."""
@@ -744,6 +767,12 @@ async def steam_sync_scheduler():
                 print(f"Auto-sync: {result['message']}")
         except Exception as e:
             print(f"Auto-sync failed: {e}")
+            try:
+                with Session(engine) as fail_session:
+                    fail_session.add(SyncRun(success=False, message=str(e)))
+                    fail_session.commit()
+            except Exception as record_error:
+                print(f"Auto-sync failure recording failed: {record_error}")
         try:
             await run_scheduled_enrichment()
         except Exception as e:

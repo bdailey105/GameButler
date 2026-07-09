@@ -4,7 +4,7 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -924,3 +924,76 @@ def test_auto_tag_respects_manual_but_retags_auto(client):
 
         assert game_c.attention_level == AttentionLevel.CASUAL
         assert game_c.attention_source == "auto"
+
+def test_automation_stats_empty(client):
+    response = client.get("/stats/automation")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["last_sync"] is None
+    assert data["last_enrichment"] is None
+
+def test_automation_stats_returns_latest_records(client):
+    with Session(engine) as session:
+        session.add(SyncRun(success=True, message="Steam sync complete: 1 added, 0 updated."))
+        job = EnrichmentJob(total=1, processed=1, succeeded=1, status="completed")
+        session.add(job)
+        session.commit()
+
+    response = client.get("/stats/automation")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["last_sync"]["success"] is True
+    assert data["last_sync"]["message"] == "Steam sync complete: 1 added, 0 updated."
+    assert data["last_enrichment"]["status"] == "completed"
+    assert data["last_enrichment"]["succeeded"] == 1
+
+def test_steam_sync_records_sync_run(client, monkeypatch):
+    monkeypatch.setenv("STEAM_API_KEY", "test-key")
+    monkeypatch.setenv("STEAM_ID", "test-steam-id")
+
+    owned_games = [{"appid": 10, "name": "Game", "playtime_forever": 0}]
+    with patch("src.api.fetch_owned_games", new=AsyncMock(return_value=owned_games)), \
+         patch("src.api.sync_recommender_with_db"):
+        response = client.post("/sync/steam")
+
+    assert response.status_code == 200
+
+    with Session(engine) as session:
+        runs = session.exec(select(SyncRun)).all()
+        assert len(runs) == 1
+        assert runs[0].success is True
+        assert "Steam sync complete" in runs[0].message
+
+def test_enrichment_candidates_exclude_max_attempts(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Maxed Out", playtime_forever=0, genre="Unknown", enrich_attempts=5))
+        session.add(Game(id=2, name="One Left", playtime_forever=0, genre="Unknown", enrich_attempts=4))
+        session.commit()
+
+    with Session(engine) as session:
+        candidates = session.exec(enrichment_candidates_query(50)).all()
+        candidate_ids = {game.id for game in candidates}
+
+    assert 1 not in candidate_ids
+    assert 2 in candidate_ids
+
+@pytest.mark.asyncio
+async def test_process_enrichment_increments_attempts(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown", header_image=None))
+        job = EnrichmentJob(total=1)
+        session.add(job)
+        session.commit()
+        session.refresh(job)
+        job_id = job.id
+
+    with patch("src.api.engine", engine), \
+         patch("src.api.fetch_game_details", new=AsyncMock(return_value=None)), \
+         patch("src.api.fetch_time_to_beat", new=AsyncMock(return_value=0)), \
+         patch("src.api.asyncio.sleep", new=AsyncMock()), \
+         patch("src.api.sync_recommender_with_db"):
+        await process_enrichment(job_id=job_id, limit=1)
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.enrich_attempts == 1

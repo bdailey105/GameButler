@@ -593,6 +593,16 @@ select:focus-visible {
   font-size: 0.85rem;
 }
 
+.automation-status {
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.automation-status .status-error {
+  color: var(--status-error);
+}
+
 .game-card-actions {
   display: flex;
   border-top: 1px solid var(--border-subtle);

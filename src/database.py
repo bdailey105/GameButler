@@ -138,6 +138,20 @@ def add_game_attention_source_column(connection):
         "UPDATE game SET attention_source = 'manual' WHERE attention_level != 'unset' AND attention_source IS NULL"
     )
 
+def add_game_enrich_attempts_column(connection):
+    tables = {
+        row[0]
+        for row in connection.exec_driver_sql(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        )
+    }
+    if "game" not in tables:
+        return
+
+    columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+    if "enrich_attempts" not in columns:
+        connection.exec_driver_sql("ALTER TABLE game ADD COLUMN enrich_attempts INTEGER NOT NULL DEFAULT 0")
+
 MIGRATIONS = (
     ("20260706_001_game_rich_metadata", add_game_rich_metadata_columns),
     ("20260706_002_game_queue_position", add_game_queue_position_column),
@@ -145,6 +159,7 @@ MIGRATIONS = (
     ("20260708_003_game_platform", add_game_platform_column),
     ("20260708_004_game_average_playtime", add_game_average_playtime_column),
     ("20260708_005_game_attention_source", add_game_attention_source_column),
+    ("20260709_006_game_enrich_attempts", add_game_enrich_attempts_column),
 )
 
 def get_session() -> Generator[Session, None, None]:
