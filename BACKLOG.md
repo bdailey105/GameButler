@@ -151,6 +151,6 @@
 
 ## Epic 24: Act on Recommendations
 **Goal:** Do something with a Butler pick without hunting it down in the Library — uses the existing `PUT /games/{id}` status endpoint, no backend changes expected.
-- [ ] **Story 24.1: Top-Pick Actions** — "▶ Play now" (status=playing) and "+ Up Next" (status=up_next) buttons on the main recommendation card.
-- [ ] **Story 24.2: Alternate Actions** — Same two actions, compact, on each "Or try:" alternate card.
-- [ ] **Story 24.3: Action Feedback** — After acting: inline confirmation on the card ("Moved to Up Next"), button disabled to prevent double-moves, and the game's shown status updates without a refetch.
+- [x] **Story 24.1: Top-Pick Actions** — "▶ Play now" (status=playing) and "+ Up Next" (status=up_next) buttons on the main recommendation card; disabled when already in that status.
+- [x] **Story 24.2: Alternate Actions** — Compact ▶ / + buttons on each "Or try:" alternate card.
+- [x] **Story 24.3: Action Feedback** — Buttons swap to inline confirmation ("✓ Moved to Up Next" / "▶ Playing now") after acting; per-game acted state resets on a new recommendation.

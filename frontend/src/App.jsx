@@ -114,6 +114,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [unplayed, setUnplayed] = useState(false)
   const [attention, setAttention] = useState('')
   const [mood, setMood] = useState('')
+  const [actedOn, setActedOn] = useState({})
   const moods = [
     { value: 'zone_out', label: 'Zone out', hint: 'Low friction' },
     { value: 'story_night', label: 'Story night', hint: 'Focused' },
@@ -121,6 +122,19 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     { value: 'finish_something', label: 'Finish something', hint: 'Progress' },
     { value: 'surprise_me', label: 'Surprise me', hint: 'Wildcard' }
   ]
+
+  useEffect(() => {
+    setActedOn({})
+  }, [recommendation])
+
+  const handleAct = async (appId, status) => {
+    try {
+      await updateGame(appId, { status })
+      setActedOn(prev => ({ ...prev, [appId]: status }))
+    } catch (err) {
+      console.error('Failed to update game:', err)
+    }
+  }
 
   const handleRecommend = () => {
     getRec({
@@ -215,6 +229,16 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
           )}
           <p><strong>Playtime:</strong> {recommendation.Playtime_Forever} mins</p>
           <p><strong>Category:</strong> {recommendation.attention_level === 'casual' ? '☕ Casual' : recommendation.attention_level === 'focused' ? '🎯 Focused' : 'Uncategorized'}</p>
+          <div className="rec-actions">
+            {actedOn[recommendation.AppID] ? (
+              <span className="rec-acted">{actedOn[recommendation.AppID] === 'playing' ? '▶ Playing now' : '✓ Moved to Up Next'}</span>
+            ) : (
+              <>
+                <button className="primary-btn" onClick={() => handleAct(recommendation.AppID, 'playing')} disabled={recommendation.status === 'playing'}>▶ Play now</button>
+                <button className="secondary-btn" onClick={() => handleAct(recommendation.AppID, 'up_next')} disabled={recommendation.status === 'up_next'}>+ Up Next</button>
+              </>
+            )}
+          </div>
           {recommendation.alternates?.length > 0 && (
             <div className="alternates">
               <p className="alternates-label">Or try:</p>
@@ -229,6 +253,16 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                     <div className="alternate-info">
                       <span className="alternate-name">{alt.Name}</span>
                       {alt.reasons?.length > 0 && <span className="alternate-reason">{alt.reasons[0]}</span>}
+                    </div>
+                    <div className="alternate-actions">
+                      {actedOn[alt.AppID] ? (
+                        <span className="rec-acted">{actedOn[alt.AppID] === 'playing' ? '▶' : '✓'}</span>
+                      ) : (
+                        <>
+                          <button className="action-btn" title="Play now" onClick={() => handleAct(alt.AppID, 'playing')} disabled={alt.status === 'playing'}>▶</button>
+                          <button className="action-btn" title="Add to Up Next" onClick={() => handleAct(alt.AppID, 'up_next')} disabled={alt.status === 'up_next'}>+</button>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
