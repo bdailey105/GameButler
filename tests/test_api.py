@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine, select
 from sqlmodel.pool import StaticPool
 from src.api import app, get_session
-from src.api import process_enrichment, enrichment_candidates_query
+from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
 from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent
 from src.recommender import GameRecommender
@@ -375,6 +375,36 @@ async def test_process_enrichment_marks_job_failed_on_crash(client):
         assert job.status == "failed"
         assert job.error_summary == "boom"
         assert job.completed_at is not None
+
+@pytest.mark.asyncio
+async def test_run_scheduled_enrichment_creates_and_runs_job(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, genre="Unknown", tags="Unknown"))
+        session.commit()
+
+    with patch("src.api.process_enrichment", new=AsyncMock()) as mock_process:
+        await run_scheduled_enrichment()
+
+    with Session(engine) as session:
+        jobs = session.exec(select(EnrichmentJob)).all()
+        assert len(jobs) == 1
+        assert jobs[0].total >= 1
+        mock_process.assert_awaited_once_with(jobs[0].id, 50)
+
+@pytest.mark.asyncio
+async def test_run_scheduled_enrichment_skips_when_job_running(client):
+    with Session(engine) as session:
+        session.add(EnrichmentJob(status="running"))
+        session.commit()
+
+    with patch("src.api.process_enrichment", new=AsyncMock()) as mock_process:
+        await run_scheduled_enrichment()
+
+    with Session(engine) as session:
+        jobs = session.exec(select(EnrichmentJob)).all()
+        assert len(jobs) == 1
+        assert jobs[0].status == "running"
+        mock_process.assert_not_awaited()
 
 def test_enrich_endpoint_rejects_concurrent_job(client):
     with Session(engine) as session:
