@@ -122,3 +122,15 @@
 - [x] **Story 20.1: SteamSpy Community Tags** — Enrichment replaces Steam's feature categories with real user tags (top 10 by votes, steamspy.com, no key needed).
 - [x] **Story 20.2: Matcher Rewrite** — Normalized substring matching ("Action RPG" hits "rpg", "Story-Rich" hits "story rich") plus expanded attention keyword lists.
 - [x] **Story 20.3: Re-runnable Auto-Tag** — `attention_source` column (migration 005) distinguishes manual picks from auto guesses; Auto-Tag now re-evaluates auto/untagged games while never touching manual ones. Existing categorizations backfilled as manual (conservative).
+
+## Interim Fixes (2026-07-09)
+- [x] Attention buttons gave no UI feedback on Library/Backlog — views now patch their own state from the PUT response.
+- [x] Dead enrichment task bricked all future runs — startup marks zombie "running" jobs failed; per-game work capped at 120s.
+- [x] Auto-enrich: one 50-game batch after each scheduled Steam sync (skips when a job is running or nothing needs enriching).
+
+## Epic 21: Automation Observability
+**Goal:** The automation added in Epics 15/20 and auto-enrich runs unattended at 3am — make its outcomes visible and its retries finite.
+- [ ] **Story 21.1: Last-Run Status Endpoint** — `GET /stats/automation`: last sync and last enrichment job (finished time, saved/failed counts, error summary).
+- [ ] **Story 21.2: Library Status Line** — Library toolbar shows last sync/enrich outcome ("Synced 2h ago · enriched 50, 3 failed"); failures visible without checking docker logs.
+- [ ] **Story 21.3: Polling Resilience** — Enrichment progress poll retries on network error instead of silently freezing the banner; show "lost contact with server" after repeated failures.
+- [ ] **Story 21.4: Enrichment Retry Cooldown** — Track enrichment attempts per game (count or last_attempted, new migration id); skip candidates after N failed tries so transient failures stop being re-fetched every night.
