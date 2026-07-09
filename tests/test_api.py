@@ -116,6 +116,27 @@ def test_update_game_marks_attention_manual(client):
         game = session.get(Game, 1)
         assert game.attention_source is None
 
+def test_update_game_sets_valid_session_tags(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/1", json={"session_tags": "burst_friendly;podcast_friendly"})
+    assert response.status_code == 200
+    assert response.json()["session_tags"] == "burst_friendly;podcast_friendly"
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.session_tags == "burst_friendly;podcast_friendly"
+
+def test_update_game_rejects_invalid_session_tag(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/1", json={"session_tags": "burst_friendly;not_a_real_tag"})
+    assert response.status_code == 422
+
 def test_queue_append_sort_and_reorder(client):
     with Session(engine) as session:
         session.add(Game(id=1, name="First", playtime_forever=0, status=GameStatus.LIBRARY))
@@ -205,6 +226,37 @@ def test_recommend_accepts_mood_and_rejects_invalid_mood(client):
 
     response = client.get("/recommend?mood=chaos_mode")
     assert response.status_code == 422
+
+def test_recommend_accepts_valid_session_params(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Short Game", "Long Game"],
+        "Playtime_Forever": [0, 0],
+        "Average_Playtime": [30, 3000],
+        "Genre": ["Action", "RPG"],
+        "Tags": ["Arcade", "Story"],
+        "status": [GameStatus.LIBRARY, GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.CASUAL, AttentionLevel.FOCUSED],
+    })
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?available_minutes=30&energy=low&context=couch")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Name"] == "Short Game"
+
+def test_recommend_rejects_invalid_energy(client):
+    response = client.get("/recommend?energy=furious")
+    assert response.status_code == 422
+
+def test_recommend_rejects_invalid_context(client):
+    response = client.get("/recommend?context=bathtub")
+    assert response.status_code == 422
+
+def test_recommend_rejects_out_of_range_available_minutes(client):
+    assert client.get("/recommend?available_minutes=4").status_code == 422
+    assert client.get("/recommend?available_minutes=601").status_code == 422
 
 def test_recommend_with_count_returns_alternates(client):
     df = pd.DataFrame({

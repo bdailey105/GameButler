@@ -318,6 +318,102 @@ def _feedback_df(games):
         rows.append(row)
     return pd.DataFrame(rows)
 
+SESSION_DEFAULTS = {
+    "Playtime_Forever": 0,
+    "Average_Playtime": 0,
+    "Genre": "Action",
+    "Tags": "Indie",
+    "status": GameStatus.LIBRARY,
+    "attention_level": AttentionLevel.UNSET,
+    "session_tags": None,
+}
+
+def _session_df(games):
+    rows = []
+    for i, game in enumerate(games):
+        row = {**SESSION_DEFAULTS, **game}
+        row.setdefault("AppID", i + 1)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+def test_available_minutes_completable_beats_unknown_length():
+    df = _session_df([
+        {"Name": "Completable", "Average_Playtime": 90},
+        {"Name": "Unknown Length", "Average_Playtime": 0},
+    ])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(available_minutes=120)
+
+    assert game['Name'] == "Completable"
+    assert "Session: finishable tonight (~2h to beat)" in game['reasons']
+
+def test_available_minutes_unknown_length_confidence_penalty():
+    df = _session_df([{"Name": "Unknown Length", "Average_Playtime": 0}])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(available_minutes=60)
+
+    # +5 "Fresh start from your library" (unplayed default) - 4 confidence penalty
+    assert game['score'] == 1
+    assert not any(reason.startswith("Session: finishable") for reason in game['reasons'])
+
+def test_explicit_length_filter_takes_precedence_over_session_input():
+    df = _session_df([
+        {"Name": "Fits Session Only", "Average_Playtime": 90},
+        {"Name": "Fits Both", "Average_Playtime": 50},
+    ])
+    recommender = GameRecommender(df)
+
+    rows = recommender.recommend_many(5, max_length=60, available_minutes=120)
+
+    names = [row['Name'] for row in rows]
+    assert names == ["Fits Both"]
+
+def test_energy_low_favors_casual_tagged_game():
+    df = _session_df([
+        {"Name": "Casual Game", "attention_level": AttentionLevel.CASUAL},
+        {"Name": "Focused Game", "attention_level": AttentionLevel.FOCUSED},
+    ])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(energy="low")
+
+    assert game['Name'] == "Casual Game"
+    assert "Session: low-energy friendly" in game['reasons']
+
+def test_context_podcast_penalizes_story_rich_vs_grind_sibling():
+    df = _session_df([
+        {"Name": "Grind Fest", "Genre": "Simulation", "Tags": "Grinding"},
+        {"Name": "Story Epic", "Genre": "RPG", "Tags": "Story Rich"},
+    ])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(context="podcast")
+
+    assert game['Name'] == "Grind Fest"
+    assert "Session: podcast-friendly grind" in game['reasons']
+
+def test_burst_friendly_override_wins_at_30_minutes():
+    df = _session_df([
+        {"Name": "Tagged Burst", "session_tags": "burst_friendly"},
+        {"Name": "Untagged Twin", "session_tags": None},
+    ])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(available_minutes=30)
+
+    assert game['Name'] == "Tagged Burst"
+    assert "Session: you marked this burst-friendly" in game['reasons']
+
+def test_untagged_game_gets_no_session_suitability_reasons():
+    df = _session_df([{"Name": "Untagged", "session_tags": None}])
+    recommender = GameRecommender(df)
+
+    game = recommender.recommend(available_minutes=30, context="couch")
+
+    assert not any("you marked this" in reason for reason in game['reasons'])
+
 def test_deferred_game_loses_to_otherwise_identical_game():
     df = _feedback_df([
         {"AppID": 1, "Name": "Deferred Game"},

@@ -142,8 +142,14 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
   const [startedOn, setStartedOn] = useState('')
   const [completedOn, setCompletedOn] = useState('')
   const [note, setNote] = useState('')
+  const [sessionTags, setSessionTags] = useState([])
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [saveError, setSaveError] = useState('')
+  const sessionTagOptions = [
+    { value: 'burst_friendly', label: 'Burst-friendly' },
+    { value: 'controller_only', label: 'Controller only' },
+    { value: 'podcast_friendly', label: 'Podcast-friendly' }
+  ]
 
   const [newEntry, setNewEntry] = useState('')
   const [addingEntry, setAddingEntry] = useState(false)
@@ -164,6 +170,7 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
         setStartedOn(data.started_on || '')
         setCompletedOn(data.completed_on || '')
         setNote(data.current_note || '')
+        setSessionTags(data.session_tags ? data.session_tags.split(';').filter(Boolean) : [])
         setSaveState('idle')
       })
       .catch(err => {
@@ -223,6 +230,10 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
     }
   }
 
+  const toggleSessionTag = (value) => {
+    setSessionTags(prev => prev.includes(value) ? prev.filter(t => t !== value) : [...prev, value])
+  }
+
   const handleSaveContext = async () => {
     setSaveState('saving')
     setSaveError('')
@@ -232,6 +243,7 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
         started_on: startedOn || null,
         completed_on: completedOn || null,
         current_note: note || null,
+        session_tags: sessionTags.length > 0 ? sessionTags.join(';') : null,
       })
       setGame(updated)
       setSaveState('saved')
@@ -341,6 +353,21 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
                 <label>Notes</label>
                 <textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="What do you think so far?" />
               </div>
+              <div className="drawer-field">
+                <label>Session suitability</label>
+                <div className="planner-chip-row">
+                  {sessionTagOptions.map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`planner-chip ${sessionTags.includes(option.value) ? 'active' : ''}`}
+                      onClick={() => toggleSessionTag(option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div className="drawer-save-row">
                 <button className="primary-btn" onClick={handleSaveContext} disabled={saveState === 'saving'}>
                   {saveState === 'saving' ? 'Saving...' : 'Save'}
@@ -390,10 +417,31 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [unplayed, setUnplayed] = useState(false)
   const [attention, setAttention] = useState('')
   const [mood, setMood] = useState('')
+  const [sessionMinutes, setSessionMinutes] = useState(null)
+  const [sessionEnergy, setSessionEnergy] = useState(null)
+  const [sessionContext, setSessionContext] = useState(null)
+  const [appliedSession, setAppliedSession] = useState(null)
   const [actedOn, setActedOn] = useState({})
   const [feedback, setFeedback] = useState({})
   const [reasonPickerFor, setReasonPickerFor] = useState(null)
   const [lastRecommendation, setLastRecommendation] = useState(recommendation)
+  const timeOptions = [
+    { value: 15, label: '15 min' },
+    { value: 30, label: '30 min' },
+    { value: 60, label: '1 hour' },
+    { value: 120, label: '90+ min' }
+  ]
+  const energyOptions = [
+    { value: 'low', label: 'Low' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'high', label: 'High' }
+  ]
+  const contextOptions = [
+    { value: 'desk', label: 'Desk' },
+    { value: 'couch', label: 'Couch' },
+    { value: 'handheld', label: 'Handheld' },
+    { value: 'podcast', label: 'Podcast' }
+  ]
   const moods = [
     { value: 'zone_out', label: 'Zone out', hint: 'Low friction' },
     { value: 'story_night', label: 'Story night', hint: 'Focused' },
@@ -441,14 +489,40 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     setReasonPickerFor(null)
   }
 
+  const handleResetSession = () => {
+    setSessionMinutes(null)
+    setSessionEnergy(null)
+    setSessionContext(null)
+  }
+
+  const sessionSummaryText = (snapshot) => {
+    if (!snapshot) return ''
+    const parts = []
+    const timeOpt = timeOptions.find(o => o.value === snapshot.minutes)
+    if (timeOpt) parts.push(timeOpt.label)
+    const energyOpt = energyOptions.find(o => o.value === snapshot.energy)
+    if (energyOpt) parts.push(`${energyOpt.label.toLowerCase()} energy`)
+    const contextOpt = contextOptions.find(o => o.value === snapshot.context)
+    if (contextOpt) parts.push(contextOpt.label.toLowerCase())
+    return parts.join(' · ')
+  }
+
   const handleRecommend = () => {
+    setAppliedSession(
+      (sessionMinutes || sessionEnergy || sessionContext)
+        ? { minutes: sessionMinutes, energy: sessionEnergy, context: sessionContext }
+        : null
+    )
     getRec({
       ...(genre && { genre }),
       ...(tag && { tag }),
       ...(length && { length }),
       unplayed_only: unplayed,
       ...(attention && { attention_level: attention }),
-      ...(mood && { mood })
+      ...(mood && { mood }),
+      ...(sessionMinutes && { available_minutes: sessionMinutes }),
+      ...(sessionEnergy && { energy: sessionEnergy }),
+      ...(sessionContext && { context: sessionContext })
     })
   }
 
@@ -457,6 +531,58 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
       <section className="card filter-section">
         <p className="eyebrow">Butler</p>
         <h2>What kind of session are you after?</h2>
+        <div className="planner-section">
+          <div className="filter-group">
+            <label>Time:</label>
+            <div className="planner-chip-row">
+              {timeOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`planner-chip ${sessionMinutes === option.value ? 'active' : ''}`}
+                  onClick={() => setSessionMinutes(sessionMinutes === option.value ? null : option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-group">
+            <label>Energy:</label>
+            <div className="planner-chip-row">
+              {energyOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`planner-chip ${sessionEnergy === option.value ? 'active' : ''}`}
+                  onClick={() => setSessionEnergy(sessionEnergy === option.value ? null : option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="filter-group">
+            <label>Setting:</label>
+            <div className="planner-chip-row">
+              {contextOptions.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`planner-chip ${sessionContext === option.value ? 'active' : ''}`}
+                  onClick={() => setSessionContext(sessionContext === option.value ? null : option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {(sessionMinutes || sessionEnergy || sessionContext) && (
+            <button type="button" className="planner-reset" onClick={handleResetSession}>
+              Reset session
+            </button>
+          )}
+        </div>
         <div className="mood-grid">
           {moods.map(option => (
             <button
@@ -470,39 +596,42 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
             </button>
           ))}
         </div>
-        <div className="filter-grid">
-          <div className="filter-group">
-            <label>Genre:</label>
-            <input type="text" value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="e.g. Action" />
+        <details className="advanced-filters">
+          <summary>Advanced filters</summary>
+          <div className="filter-grid">
+            <div className="filter-group">
+              <label>Genre:</label>
+              <input type="text" value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="e.g. Action" />
+            </div>
+            <div className="filter-group">
+              <label>Tag:</label>
+              <input type="text" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="e.g. Indie" />
+            </div>
+            <div className="filter-group">
+              <label>Length:</label>
+              <select value={length} onChange={(e) => setLength(e.target.value)}>
+                <option value="">Any Length</option>
+                <option value="short">Short (&lt; 5h)</option>
+                <option value="medium">Medium (5h - 20h)</option>
+                <option value="long">Long (&gt; 20h)</option>
+              </select>
+            </div>
+            <div className="filter-group">
+              <label>Attention:</label>
+              <select value={attention} onChange={(e) => setAttention(e.target.value)}>
+                <option value="">Any</option>
+                <option value="casual">☕ Casual</option>
+                <option value="focused">🎯 Focused</option>
+              </select>
+            </div>
           </div>
-          <div className="filter-group">
-            <label>Tag:</label>
-            <input type="text" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="e.g. Indie" />
+          <div className="filter-group checkbox">
+            <label>
+              <input type="checkbox" checked={unplayed} onChange={(e) => setUnplayed(e.target.checked)} />
+              Unplayed Only
+            </label>
           </div>
-          <div className="filter-group">
-            <label>Length:</label>
-            <select value={length} onChange={(e) => setLength(e.target.value)}>
-              <option value="">Any Length</option>
-              <option value="short">Short (&lt; 5h)</option>
-              <option value="medium">Medium (5h - 20h)</option>
-              <option value="long">Long (&gt; 20h)</option>
-            </select>
-          </div>
-          <div className="filter-group">
-            <label>Attention:</label>
-            <select value={attention} onChange={(e) => setAttention(e.target.value)}>
-              <option value="">Any</option>
-              <option value="casual">☕ Casual</option>
-              <option value="focused">🎯 Focused</option>
-            </select>
-          </div>
-        </div>
-        <div className="filter-group checkbox">
-          <label>
-            <input type="checkbox" checked={unplayed} onChange={(e) => setUnplayed(e.target.checked)} />
-            Unplayed Only
-          </label>
-        </div>
+        </details>
         <button className="primary-btn" onClick={handleRecommend} disabled={loading}>
           {loading ? 'Scanning library...' : 'Find My Game'}
         </button>
@@ -524,6 +653,9 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
             <span className="badge secondary">{recommendation.Tags.split(';')[0]}</span>
           </div>
           {recommendation.short_description && <p className="game-description">{recommendation.short_description}</p>}
+          {appliedSession && (
+            <p className="session-summary">Planned for: {sessionSummaryText(appliedSession)}</p>
+          )}
           {recommendation.reasons?.length > 0 && (
             <div className="why-panel">
               <strong>Why this game</strong>

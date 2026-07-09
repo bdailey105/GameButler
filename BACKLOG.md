@@ -169,9 +169,9 @@
 
 ## Epic 27: Tonight Planner
 **Goal:** Recommend a game for the next session's actual time, energy, and setting—not only its total length or genre.
-- [ ] **Story 27.1: Session Inputs & Scoring** — Add validated available-minutes, energy, and context inputs to Butler with explicit-filter precedence and explanations.
-- [ ] **Story 27.2: Planner UI** — Add a responsive, one-screen 15/30/60/90+ minute session planner while retaining advanced filters.
-- [ ] **Story 27.3: Personal Session-Suitability Tags** — Let the user mark games as burst-friendly, controller-only, or podcast-friendly and use them as explainable overrides.
+- [x] **Story 27.1: Session Inputs & Scoring** — `/recommend` accepts validated `available_minutes`/`energy`/`context`; score-only adjustments (documented table) so explicit filters keep precedence; unknown HLTB lowers confidence (-4) instead of claiming fit; "Session:"-prefixed reasons.
+- [x] **Story 27.2: Planner UI** — "Tonight" chip rows (15/30/60/90+ · energy · desk/couch/handheld/podcast) above moods, one-click Reset session, advanced filters collapsed into details; "Planned for: …" snapshot shown with the result; chips wrap on mobile.
+- [x] **Story 27.3: Personal Session-Suitability Tags** — `session_tags` column (migration 008, validated vocabulary burst_friendly/controller_only/podcast_friendly); drawer toggle chips; bonuses only when the matching context is chosen, untagged games get no invented claims.
 
 ## Epic 28: Continuation & Finish Ladder
 **Goal:** Make progress on started games approachable without overstating metadata-derived completion estimates.

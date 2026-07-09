@@ -2,6 +2,20 @@ from typing import Optional
 from enum import Enum
 from datetime import date, datetime, timezone
 from sqlmodel import SQLModel, Field
+from pydantic import field_validator
+
+SESSION_TAGS = {"burst_friendly", "controller_only", "podcast_friendly"}
+
+def _validate_session_tags(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return value
+    entries = [entry.strip() for entry in value.split(";")]
+    invalid = [entry for entry in entries if entry not in SESSION_TAGS]
+    if invalid:
+        raise ValueError(
+            f"Invalid session_tags entry: {invalid[0]!r}. Must be one of {sorted(SESSION_TAGS)}"
+        )
+    return value
 
 class GameStatus(str, Enum):
     LIBRARY = "library"
@@ -33,6 +47,12 @@ class GameBase(SQLModel):
     started_on: Optional[date] = None
     completed_on: Optional[date] = None
     current_note: Optional[str] = None  # concise "where I left off"
+    session_tags: Optional[str] = None  # semicolon list: burst_friendly;controller_only;podcast_friendly
+
+    @field_validator("session_tags")
+    @classmethod
+    def _check_session_tags(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_session_tags(value)
 
 class Game(GameBase, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -54,6 +74,12 @@ class GameUpdate(SQLModel):
     started_on: Optional[date] = None
     completed_on: Optional[date] = None
     current_note: Optional[str] = None
+    session_tags: Optional[str] = None
+
+    @field_validator("session_tags")
+    @classmethod
+    def _check_session_tags(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_session_tags(value)
 
 class QueueReorder(SQLModel):
     app_ids: list[int]
