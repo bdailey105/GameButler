@@ -84,4 +84,9 @@ export const fetchActivity = async () => {
   return response.data;
 };
 
+export const fetchAutomationStatus = async () => {
+  const response = await api.get('/stats/automation');
+  return response.data;
+};
+
 export default api;

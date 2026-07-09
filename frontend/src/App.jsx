@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, addGame } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame } from './api'
 import './App.css'
 
 function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre }) {
@@ -316,6 +316,15 @@ function DashboardView({ games, onMove, onAttentionChange }) {
   )
 }
 
+function timeAgo(iso) {
+  const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
+  const mins = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000))
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  if (mins < 1440) return `${Math.floor(mins / 60)}h ago`
+  return `${Math.floor(mins / 1440)}d ago`
+}
+
 function LibraryView({ onMove, onAttentionChange }) {
   const [games, setGames] = useState([])
   const [search, setSearch] = useState('')
@@ -325,6 +334,7 @@ function LibraryView({ onMove, onAttentionChange }) {
   const [enriching, setEnriching] = useState(false)
   const [enrichmentJob, setEnrichmentJob] = useState(null)
   const [autoTagMsg, setAutoTagMsg] = useState('')
+  const [automation, setAutomation] = useState(null)
 
   const loadLibrary = useCallback(async () => {
     setLoading(true)
@@ -356,13 +366,19 @@ function LibraryView({ onMove, onAttentionChange }) {
   }, [])
 
   useEffect(() => {
+    fetchAutomationStatus().then(setAutomation).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     if (!enrichmentJob || enrichmentJob.status !== 'running') return
 
     let cancelled = false
+    let consecutiveErrors = 0
     const timer = setInterval(async () => {
       try {
         const job = await fetchEnrichmentJob(enrichmentJob.id)
         if (cancelled) return
+        consecutiveErrors = 0
         setEnrichmentJob(job)
         setEnriching(job.status === 'running')
         if (job.status !== 'running') {
@@ -372,8 +388,12 @@ function LibraryView({ onMove, onAttentionChange }) {
       } catch (err) {
         console.error(err)
         if (cancelled) return
-        setEnriching(false)
-        clearInterval(timer)
+        consecutiveErrors += 1
+        if (consecutiveErrors >= 5) {
+          setEnriching(false)
+          setAutoTagMsg('Lost contact with server — enrichment may still be running.')
+          clearInterval(timer)
+        }
       }
     }, 1500)
 
@@ -454,6 +474,27 @@ function LibraryView({ onMove, onAttentionChange }) {
     }
   }
 
+  const truncate = (s, n) => (s && s.length > n ? `${s.slice(0, n)}…` : s)
+  const automationParts = []
+  if (automation?.last_sync) {
+    const { finished_at, success, message } = automation.last_sync
+    if (success === false) {
+      automationParts.push({ text: `Sync failed: ${truncate(message, 60)}`, isError: true })
+    } else {
+      automationParts.push({ text: `Synced ${timeAgo(finished_at)}` })
+    }
+  }
+  if (automation?.last_enrichment) {
+    const { status, processed, total, succeeded, failed, error_summary } = automation.last_enrichment
+    if (status === 'completed') {
+      automationParts.push({ text: `enriched ${succeeded}${failed > 0 ? `, ${failed} failed` : ''}` })
+    } else if (status === 'failed') {
+      automationParts.push({ text: `enrichment failed: ${truncate(error_summary, 60)}`, isError: true })
+    } else if (status === 'running') {
+      automationParts.push({ text: `enriching ${processed}/${total}…` })
+    }
+  }
+
   return (
     <div className="view library-view">
       <section className="card library-header">
@@ -491,6 +532,16 @@ function LibraryView({ onMove, onAttentionChange }) {
           </button>
         </div>
         {autoTagMsg && <p className="success-msg">{autoTagMsg}</p>}
+        {automationParts.length > 0 && (
+          <p className="automation-status">
+            {automationParts.map((part, i) => (
+              <span key={i}>
+                {i > 0 && ' · '}
+                {part.isError ? <span className="status-error">{part.text}</span> : part.text}
+              </span>
+            ))}
+          </p>
+        )}
         {enrichmentJob && (
           <div className={`job-progress job-${enrichmentJob.status}`}>
             <div className="progress-row">

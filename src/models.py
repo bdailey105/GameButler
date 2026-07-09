@@ -28,6 +28,7 @@ class GameBase(SQLModel):
     platform: str = Field(default="steam")
     queue_position: Optional[int] = None
     average_playtime: Optional[int] = None  # minutes to beat (main story), None = not yet looked up, 0 = HLTB has no data
+    enrich_attempts: int = Field(default=0)
 
 class Game(GameBase, table=True):
     id: int = Field(default=None, primary_key=True)
@@ -60,6 +61,12 @@ class EnrichmentJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
+
+class SyncRun(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    finished_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    success: bool = True
+    message: str = ""
 
 class PlayEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
