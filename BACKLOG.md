@@ -134,3 +134,11 @@
 - [x] **Story 21.2: Library Status Line** — Library toolbar shows last sync/enrich outcome ("Synced 2h ago · enriched 47, 3 failed"); failures render red without checking docker logs.
 - [x] **Story 21.3: Polling Resilience** — Enrichment progress poll tolerates up to 5 consecutive network errors before giving up with "Lost contact with server" instead of silently freezing the banner.
 - [x] **Story 21.4: Enrichment Retry Cooldown** — `enrich_attempts` column (migration 006) increments per enrichment pass; candidates skipped after 5 attempts so transient failures stop being re-fetched every night. No manual-retry override yet (reset attempts in DB to force).
+- [x] **Story 21.5: Priority Enrichment Order** — Candidates ordered playing → up_next → rest (was id order, which left the actively-played game bare for days behind dormant titles).
+
+## Epic 22: Recommender Tune-Up
+**Goal:** Scoring that actually uses the data Epics 19/20 unlocked — real community tags and real time-to-beat — with reasons a human finds convincing.
+- [ ] **Story 22.1: Tag-Aware Mood Scoring** — Mood mappings score against SteamSpy community tags (e.g. zone_out → "relaxing", "casual"; story_night → "story rich", "atmospheric") instead of relying on genre alone; audit `apply_mood_score` against the tag vocabulary actually present in the library.
+- [ ] **Story 22.2: Length-Aware Moods** — finish_something and short_session weigh `average_playtime` (HLTB) directly: prefer games finishable in the time budget; penalize 60h epics for short_session even when tags match.
+- [ ] **Story 22.3: Convincing Reasons** — Reason strings cite concrete signals ("~8h to beat — finishable this week", "tagged Story Rich like 4 of your finished games") instead of generic filler ("Fresh start from your library").
+- [ ] **Story 22.4: Scoring Regression Tests** — Table-driven tests pinning mood/tag/length scoring behavior so future tuning can't silently regress recommendations.
