@@ -122,6 +122,7 @@ def test_migrations_are_recorded_and_idempotent():
         ("20260708_004_game_average_playtime",),
         ("20260708_005_game_attention_source",),
         ("20260709_006_game_enrich_attempts",),
+        ("20260709_007_game_personal_context",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
@@ -129,6 +130,10 @@ def test_migrations_are_recorded_and_idempotent():
     assert "average_playtime" in columns
     assert "attention_source" in columns
     assert "enrich_attempts" in columns
+    assert "personal_rating" in columns
+    assert "started_on" in columns
+    assert "completed_on" in columns
+    assert "current_note" in columns
 
 def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     """Regression: adding a column to an already-applied migration never runs.
@@ -193,6 +198,80 @@ def test_attention_source_migration_backfills_manual():
 
     assert "attention_source" in columns
     assert attention_source == "manual"
+
+def test_personal_context_migration_runs_on_db_with_earlier_migrations_applied():
+    """Regression: adding a column to an already-applied migration never runs.
+    Simulates a production DB where earlier migrations are recorded but the new
+    personal-context columns are missing."""
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever) VALUES (1, 'Existing Game', 42)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+        row = connection.exec_driver_sql(
+            "SELECT personal_rating, started_on, completed_on, current_note FROM game WHERE id = 1"
+        ).first()
+
+    assert "personal_rating" in columns
+    assert "started_on" in columns
+    assert "completed_on" in columns
+    assert "current_note" in columns
+    assert row == (None, None, None, None)
+
+def test_game_personal_context_persists(session: Session):
+    from datetime import date
+
+    game = Game(
+        id=1,
+        name="Test Game",
+        playtime_forever=100,
+        personal_rating=4,
+        started_on=date(2026, 1, 1),
+        completed_on=date(2026, 2, 1),
+        current_note="Stuck on the final boss.",
+    )
+    session.add(game)
+    session.commit()
+
+    result = session.get(Game, 1)
+    assert result.personal_rating == 4
+    assert result.started_on == date(2026, 1, 1)
+    assert result.completed_on == date(2026, 2, 1)
+    assert result.current_note == "Stuck on the final boss."
+
+def test_journal_entries_persist_and_round_trip(session: Session):
+    from src.models import JournalEntry
+
+    game = Game(id=1, name="Test Game", playtime_forever=100)
+    session.add(game)
+    session.commit()
+
+    session.add(JournalEntry(game_id=1, text="Started the tutorial."))
+    session.add(JournalEntry(game_id=1, text="Beat the first boss."))
+    session.commit()
+
+    entries = session.exec(
+        select(JournalEntry).where(JournalEntry.game_id == 1)
+    ).all()
+    assert len(entries) == 2
+    assert {entry.text for entry in entries} == {
+        "Started the tutorial.",
+        "Beat the first boss.",
+    }
+    assert all(entry.created_at is not None for entry in entries)
 
 def test_recommender_sync_logic(session: Session):
     # Add some games

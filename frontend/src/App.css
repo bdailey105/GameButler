@@ -242,8 +242,10 @@ h2 {
 }
 
 input[type="text"],
+input[type="date"],
 select,
 input[type="file"],
+textarea,
 .search-input {
   width: 100%;
   box-sizing: border-box;
@@ -253,6 +255,11 @@ input[type="file"],
   color: var(--text-primary);
   padding: 0.75rem 0.85rem;
   font-size: 0.95rem;
+  font-family: inherit;
+}
+
+textarea {
+  resize: vertical;
 }
 
 button:focus-visible,
@@ -902,6 +909,218 @@ select:focus-visible {
   100% { background-position: -200% 0; }
 }
 
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 16, 0.6);
+  z-index: 300;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 301;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  width: min(420px, 100%);
+  overflow-y: auto;
+  background: var(--bg-card-alt);
+  border-left: 1px solid var(--border-default);
+  padding: var(--space-5);
+  box-shadow: -18px 0 40px rgba(0, 0, 0, 0.35);
+}
+
+.drawer:focus-visible,
+.drawer:focus {
+  outline: none;
+}
+
+.drawer-close {
+  align-self: flex-end;
+  width: 2.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  flex: none;
+}
+
+.drawer-header {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.drawer-art {
+  width: 100%;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  background: var(--bg-base);
+}
+
+.drawer-art-placeholder {
+  display: grid;
+  place-items: center;
+  background:
+    repeating-linear-gradient(135deg, rgba(79, 142, 247, 0.08), rgba(79, 142, 247, 0.08) 12px, transparent 12px, transparent 24px),
+    var(--bg-base);
+  color: var(--text-tertiary);
+  font-size: 2rem;
+  font-weight: 850;
+}
+
+.drawer-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+}
+
+.drawer-description {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.drawer-status-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.drawer-status-actions .action-btn {
+  flex: none;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.9rem;
+}
+
+.drawer-section {
+  display: grid;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}
+
+.drawer-section h3 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.drawer-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.drawer-field label {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.drawer-date-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.star-rating {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.star-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0.1rem;
+}
+
+.star-btn.filled {
+  color: var(--status-casual);
+}
+
+.drawer-save-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.drawer-save-row .primary-btn {
+  width: auto;
+}
+
+.drawer-error-text {
+  color: #ff9b94;
+  font-size: 0.85rem;
+}
+
+.journal-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.journal-entry {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  padding: var(--space-3);
+}
+
+.journal-entry-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.journal-date {
+  color: var(--text-tertiary);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.journal-delete {
+  flex: none;
+  width: 1.75rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0.3rem;
+}
+
+.journal-text {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.journal-add {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.journal-add .secondary-btn {
+  justify-self: start;
+}
+
+.empty-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+}
+
 @media (max-width: 980px) {
   .navbar {
     grid-template-columns: 1fr;
@@ -969,5 +1188,9 @@ select:focus-visible {
 
   .library-grid {
     grid-template-columns: 1fr;
+  }
+
+  .drawer {
+    width: 100%;
   }
 }

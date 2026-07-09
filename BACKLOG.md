@@ -157,9 +157,9 @@
 
 ## Epic 25: Game Detail & Play Journal
 **Goal:** Give each game a private home for notes, ratings, milestones, and return context.
-- [ ] **Story 25.1: Personal Game Context Persistence** — Store personal ratings, started/completed dates, current-state notes, and append-only journal entries without changing Steam activity history.
-- [ ] **Story 25.2: Detail & Journal API** — Expose validated game-detail and journal CRUD endpoints with empty and invalid-input coverage.
-- [ ] **Story 25.3: Accessible Game Detail Drawer** — Open game details from cards without losing library position; support notes, milestones, loading, empty, and keyboard states.
+- [x] **Story 25.1: Personal Game Context Persistence** — `personal_rating` (1-5), `started_on`/`completed_on`, `current_note` on Game (migration 007); append-only `JournalEntry` table; `PlayEvent` history untouched.
+- [x] **Story 25.2: Detail & Journal API** — `GET /games/{id}` returns game + chronological journal; journal POST/PUT/DELETE with 400 on blank text, 404 on unknown/mismatched ids, 422 on out-of-range rating or bad dates; game delete cleans journal.
+- [x] **Story 25.3: Accessible Game Detail Drawer** — ⓘ on every card opens a right-side drawer (art, metadata, status actions, star rating, dates, notes with Saved/error feedback, journal timeline); focus trap, Esc close, focus returns to opening card; loading/empty states.
 
 ## Epic 26: Concierge Feedback & Preference Learning
 **Goal:** Learn from recommendation decisions while keeping every scoring influence visible and reversible.
