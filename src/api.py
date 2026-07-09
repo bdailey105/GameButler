@@ -8,7 +8,7 @@ import shutil
 import pandas as pd
 import asyncio
 import tempfile
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select, col, or_
 from sqlalchemy import case
@@ -16,7 +16,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun, JournalEntry
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -28,6 +28,10 @@ recommender = None
 
 def utc_now():
     return datetime.now(timezone.utc)
+
+def as_naive_utc(dt: datetime) -> datetime:
+    """Datetimes round-trip through SQLite as naive UTC; normalize aware values too."""
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 def sync_recommender_with_db():
     """Load data from database into the global recommender instance."""
@@ -49,8 +53,25 @@ def sync_recommender_with_db():
             if 'Average_Playtime' not in df.columns:
                 df['Average_Playtime'] = 0
             df['Average_Playtime'] = df['Average_Playtime'].fillna(0)
-            
-            recommender = GameRecommender(df)
+
+            games_by_id = {game.id: game for game in results}
+            cutoff = as_naive_utc(utc_now() - timedelta(days=30))
+            decisions = session.exec(
+                select(RecommendationDecision).where(RecommendationDecision.created_at >= cutoff)
+            ).all()
+            feedback = []
+            for decision in decisions:
+                game = games_by_id.get(decision.game_id)
+                feedback.append({
+                    "game_id": decision.game_id,
+                    "decision": decision.decision,
+                    "reason": decision.reason,
+                    "tags_snapshot": decision.tags_snapshot,
+                    "game_name": game.name if game else None,
+                    "created_at": decision.created_at,
+                })
+
+            recommender = GameRecommender(df, feedback=feedback)
             print(f"Recommender synced with DB. Total games: {len(df)}")
         else:
             recommender = GameRecommender(pd.DataFrame())
@@ -171,6 +192,28 @@ class ManualGameCreate(BaseModel):
 
 class JournalEntryCreate(BaseModel):
     text: str
+
+DecisionType = Literal[
+    "accepted_play",
+    "accepted_queue",
+    "rejected",
+    "deferred",
+    "more_like_this",
+    "less_like_this",
+]
+DecisionReason = Literal[
+    "not_in_the_mood",
+    "too_long",
+    "too_demanding",
+    "bounced_off",
+    "defer_for_now",
+]
+
+class RecommendationDecisionCreate(BaseModel):
+    game_id: int
+    decision: DecisionType
+    reason: Optional[DecisionReason] = None
+    mood: Optional[str] = None
 
 @app.get("/")
 async def root():
@@ -589,10 +632,6 @@ async def delete_journal_entry(
     session.commit()
     return {"message": "Journal entry deleted."}
 
-def as_naive_utc(dt: datetime) -> datetime:
-    """Datetimes round-trip through SQLite as naive UTC; normalize aware values too."""
-    return dt.replace(tzinfo=None) if dt.tzinfo else dt
-
 @app.get("/stats/activity")
 async def activity_stats(limit: int = 20, session: Session = Depends(get_session)):
     week_ago = as_naive_utc(utc_now() - timedelta(days=7))
@@ -876,6 +915,46 @@ async def sync_steam_library(session: Session = Depends(get_session)):
         raise HTTPException(status_code=503, detail="Steam sync not configured. Set STEAM_API_KEY and STEAM_ID environment variables.")
 
     return await run_steam_sync(session)
+
+@app.post("/recommendations/decisions", response_model=RecommendationDecision)
+async def create_recommendation_decision(
+    payload: RecommendationDecisionCreate,
+    session: Session = Depends(get_session),
+):
+    game = session.get(Game, payload.game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    decision = RecommendationDecision(
+        game_id=payload.game_id,
+        decision=payload.decision,
+        reason=payload.reason,
+        mood=payload.mood,
+        tags_snapshot=game.tags,
+    )
+    session.add(decision)
+    session.commit()
+    session.refresh(decision)
+    sync_recommender_with_db()
+    return decision
+
+@app.get("/recommendations/decisions", response_model=List[RecommendationDecision])
+async def list_recommendation_decisions(session: Session = Depends(get_session)):
+    return session.exec(
+        select(RecommendationDecision).order_by(
+            RecommendationDecision.created_at.desc(), RecommendationDecision.id.desc()
+        )
+    ).all()
+
+@app.delete("/recommendations/decisions")
+async def clear_recommendation_decisions(session: Session = Depends(get_session)):
+    decisions = session.exec(select(RecommendationDecision)).all()
+    count = len(decisions)
+    for decision in decisions:
+        session.delete(decision)
+    session.commit()
+    sync_recommender_with_db()
+    return {"cleared": count}
 
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(

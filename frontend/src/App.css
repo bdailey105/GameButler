@@ -673,6 +673,8 @@ select:focus-visible {
 
 .rec-actions {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-3);
 }
@@ -686,6 +688,42 @@ select:focus-visible {
 .rec-acted {
   color: var(--status-done);
   font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.rec-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.reason-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.reason-chip {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+}
+
+.reason-chip:hover {
+  border-color: var(--brand-primary);
+  color: var(--text-primary);
+  background: var(--brand-tint);
+}
+
+.rec-feedback-note {
+  color: var(--text-secondary);
+  font-style: italic;
   font-size: 0.9rem;
 }
 

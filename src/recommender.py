@@ -1,5 +1,6 @@
 import pandas as pd
 from typing import Optional
+from datetime import datetime, timezone
 from src.models import GameStatus, AttentionLevel
 
 def _format_hours(minutes) -> str:
@@ -8,8 +9,9 @@ def _format_hours(minutes) -> str:
     return "<1h" if hours == 0 else f"{hours}h"
 
 class GameRecommender:
-    def __init__(self, df: pd.DataFrame):
+    def __init__(self, df: pd.DataFrame, feedback: Optional[list] = None):
         self.df = df
+        self.feedback = feedback or []
 
     def recommend(self,
                   genre: Optional[str] = None,
@@ -178,6 +180,8 @@ class GameRecommender:
         if mood:
             self.apply_mood_score(scored, add_reason, add_score, add_dynamic_reason, mood)
 
+        self.apply_feedback_score(scored, add_reason, add_score)
+
         empty_reasons = scored["_reasons"].apply(len) == 0
         for idx in scored.index[empty_reasons]:
             scored.at[idx, "_reasons"] = ["Best deterministic fit from the current filters"]
@@ -232,6 +236,71 @@ class GameRecommender:
             )
         elif mood == "surprise_me":
             add_reason(pd.Series(True, index=scored.index), 3, "Mood: surprise pick from eligible games")
+
+    def apply_feedback_score(self, scored: pd.DataFrame, add_reason, add_score):
+        """Apply preference-learning adjustments from recent recommendation decisions.
+
+        Effects, relative to `decision.created_at` (UTC), documented for transparency:
+
+        | Decision        | Effect                                                                | Window  |
+        |-----------------|------------------------------------------------------------------------|---------|
+        | deferred        | decided game -25 (temporary deprioritization, not hidden)              | 7 days  |
+        | rejected        | decided game -20                                                        | 14 days |
+        | less_like_this  | decided game -10; primary-tag siblings -6                              | 30 days |
+        | more_like_this  | decided game +10 ("Feedback: you asked for more like this");           | 30 days |
+        |                 | primary-tag siblings +8 ("Feedback: more like {game_name}")            |         |
+
+        Negative adjustments use add_score (no reason strings — reasons are shown as
+        positives); positive adjustments use add_reason so feedback signals are
+        visibly distinguished (prefixed "Feedback:") from mood/queue/metadata reasons.
+        The "primary tag" is the first entry of a decision's tags_snapshot, matched as a
+        case-insensitive substring against the Tags column; skipped when the snapshot is
+        empty or "Unknown". Matching uses the AppID column against each decision's game_id.
+        """
+        if not self.feedback or "AppID" not in scored.columns:
+            return
+
+        now = datetime.now(timezone.utc)
+
+        def age_days(created_at) -> float:
+            if created_at is None:
+                return float("inf")
+            if isinstance(created_at, str):
+                created_at = datetime.fromisoformat(created_at)
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            return (now - created_at).total_seconds() / 86400
+
+        def primary_tag(tags_snapshot) -> Optional[str]:
+            if not tags_snapshot:
+                return None
+            first = tags_snapshot.split(";")[0].strip()
+            if not first or first.lower() == "unknown":
+                return None
+            return first
+
+        for decision in self.feedback:
+            age = age_days(decision.get("created_at"))
+            mask_self = scored["AppID"] == decision.get("game_id")
+            decision_type = decision.get("decision")
+
+            if decision_type == "deferred" and age <= 7:
+                add_score(mask_self, -25)
+            elif decision_type == "rejected" and age <= 14:
+                add_score(mask_self, -20)
+            elif decision_type == "less_like_this" and age <= 30:
+                add_score(mask_self, -10)
+                tag = primary_tag(decision.get("tags_snapshot"))
+                if tag and "Tags" in scored.columns:
+                    sibling_mask = scored["Tags"].astype(str).str.contains(tag, case=False, na=False) & ~mask_self
+                    add_score(sibling_mask, -6)
+            elif decision_type == "more_like_this" and age <= 30:
+                add_reason(mask_self, 10, "Feedback: you asked for more like this")
+                tag = primary_tag(decision.get("tags_snapshot"))
+                if tag and "Tags" in scored.columns:
+                    sibling_mask = scored["Tags"].astype(str).str.contains(tag, case=False, na=False) & ~mask_self
+                    game_name = decision.get("game_name") or "that game"
+                    add_reason(sibling_mask, 8, f"Feedback: more like {game_name}")
 
     def recommend_random(self) -> Optional[pd.Series]:
         """Returns a random game from the library."""

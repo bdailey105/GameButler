@@ -298,3 +298,30 @@ def test_recommender_sync_logic(session: Session):
     # Test recommendation
     rec = recommender.recommend(genre="Action")
     assert rec['Name'] == "Game A"
+
+def test_recommendation_decision_persists_and_round_trips(session: Session):
+    from src.models import RecommendationDecision
+
+    game = Game(id=1, name="Test Game", playtime_forever=100, tags="Indie;Story Rich")
+    session.add(game)
+    session.commit()
+
+    session.add(RecommendationDecision(
+        game_id=1,
+        decision="rejected",
+        reason="too_long",
+        mood="story_night",
+        tags_snapshot=game.tags,
+    ))
+    session.commit()
+
+    decisions = session.exec(
+        select(RecommendationDecision).where(RecommendationDecision.game_id == 1)
+    ).all()
+    assert len(decisions) == 1
+    decision = decisions[0]
+    assert decision.decision == "rejected"
+    assert decision.reason == "too_long"
+    assert decision.mood == "story_night"
+    assert decision.tags_snapshot == "Indie;Story Rich"
+    assert decision.created_at is not None
