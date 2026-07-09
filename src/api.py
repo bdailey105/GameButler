@@ -89,6 +89,22 @@ async def lifespan(app: FastAPI):
     
     sync_recommender_with_db()
 
+    with Session(engine) as session:
+        stale_jobs = session.exec(
+            select(EnrichmentJob).where(EnrichmentJob.status == "running")
+        ).all()
+        for stale_job in stale_jobs:
+            # Background tasks die with the process — a "running" job at boot is a
+            # zombie that would block enrichment forever
+            stale_job.status = "failed"
+            stale_job.error_summary = "Interrupted by server restart"
+            stale_job.completed_at = utc_now()
+            stale_job.updated_at = stale_job.completed_at
+            session.add(stale_job)
+        if stale_jobs:
+            session.commit()
+            print(f"Marked {len(stale_jobs)} interrupted enrichment job(s) as failed.")
+
     task = None
     interval = steam_sync_interval_seconds()
     if interval is not None:
@@ -338,6 +354,8 @@ def enrichment_candidates_query(limit: int):
         & (Game.platform == "steam")
     ).limit(limit)
 
+PER_GAME_TIMEOUT = 120.0
+
 async def process_enrichment(job_id: int, limit: int):
     """Background task to enrich games."""
     print(f"Starting enrichment task for {limit} games...")
@@ -356,47 +374,52 @@ async def process_enrichment(job_id: int, limit: int):
             print(f"Found {len(games_to_enrich)} games to enrich.")
 
             saved_metadata = 0
+
+            async def enrich_one(game):
+                nonlocal saved_metadata
+                details = await fetch_game_details(game.id)
+
+                if details:
+                    if game.genre == "Unknown" and details.get("genres"):
+                        game.genre = ";".join(details["genres"])
+                    if game.tags == "Unknown" and details.get("categories"):
+                        game.tags = ";".join(details["categories"])
+                    # "" = checked, Steam has no art (keeps game out of future candidate runs)
+                    game.header_image = details.get("header_image") or game.header_image or ""
+                    game.short_description = details.get("short_description") or game.short_description
+
+                    user_tags = await fetch_user_tags(game.id)
+                    if user_tags:
+                        game.tags = ";".join(user_tags)
+
+                    session.add(game)
+                    job.succeeded += 1
+                    saved_metadata += 1
+                elif details == {}:
+                    # Steam has no store page (delisted/legacy) — mark terminal so the
+                    # game drops out of future candidate runs instead of failing forever
+                    if game.genre == "Unknown":
+                        game.genre = "Unlisted"
+                    if game.tags == "Unknown":
+                        game.tags = ""
+                    if game.header_image is None:
+                        game.header_image = ""
+                    session.add(game)
+                    job.succeeded += 1
+                else:
+                    job.failed += 1
+                    job.error_summary = f"No Steam details for {game.id}"
+
+                if game.average_playtime is None:
+                    ttb = await fetch_time_to_beat(game.name)
+                    if ttb is not None:
+                        game.average_playtime = ttb
+                        session.add(game)
+
             for game in games_to_enrich:
                 try:
                     print(f"Fetching details for {game.name} ({game.id})...")
-                    details = await fetch_game_details(game.id)
-
-                    if details:
-                        if game.genre == "Unknown" and details.get("genres"):
-                            game.genre = ";".join(details["genres"])
-                        if game.tags == "Unknown" and details.get("categories"):
-                            game.tags = ";".join(details["categories"])
-                        # "" = checked, Steam has no art (keeps game out of future candidate runs)
-                        game.header_image = details.get("header_image") or game.header_image or ""
-                        game.short_description = details.get("short_description") or game.short_description
-
-                        user_tags = await fetch_user_tags(game.id)
-                        if user_tags:
-                            game.tags = ";".join(user_tags)
-
-                        session.add(game)
-                        job.succeeded += 1
-                        saved_metadata += 1
-                    elif details == {}:
-                        # Steam has no store page (delisted/legacy) — mark terminal so the
-                        # game drops out of future candidate runs instead of failing forever
-                        if game.genre == "Unknown":
-                            game.genre = "Unlisted"
-                        if game.tags == "Unknown":
-                            game.tags = ""
-                        if game.header_image is None:
-                            game.header_image = ""
-                        session.add(game)
-                        job.succeeded += 1
-                    else:
-                        job.failed += 1
-                        job.error_summary = f"No Steam details for {game.id}"
-
-                    if game.average_playtime is None:
-                        ttb = await fetch_time_to_beat(game.name)
-                        if ttb is not None:
-                            game.average_playtime = ttb
-                            session.add(game)
+                    await asyncio.wait_for(enrich_one(game), timeout=PER_GAME_TIMEOUT)
 
                     # Respect rate limits
                     await asyncio.sleep(1.5)
