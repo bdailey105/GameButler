@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
 
-function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre, onOpenDetail }) {
+function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [], onDelete, onEditGenre, onOpenDetail, selectable, selectedState, onToggleSelect }) {
   const platformLabels = PLATFORM_LABELS
   const primaryTag = game.tags?.split(';')[0]
   const status = game.status || 'library'
@@ -15,7 +15,16 @@ function GameCard({ game, onMove, onAttentionChange, actions, queueActions = [],
   ]
 
   return (
-    <div className={`game-card status-${status} attention-${game.attention_level}`}>
+    <div className={`game-card status-${status} attention-${game.attention_level} ${selectedState ? 'selected' : ''}`}>
+      {selectable && (
+        <input
+          type="checkbox"
+          className="card-select"
+          checked={!!selectedState}
+          onChange={() => onToggleSelect(game.id)}
+          aria-label={`Select ${game.name}`}
+        />
+      )}
       {game.header_image ? (
         <img className="game-card-image" src={game.header_image} alt="" loading="lazy" />
       ) : (
@@ -1003,6 +1012,33 @@ function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
   )
 }
 
+const SAVED_FILTERS_KEY = 'gamebutler.savedFilters'
+
+function loadSavedFiltersFromStorage() {
+  try {
+    const raw = localStorage.getItem(SAVED_FILTERS_KEY)
+    return raw ? JSON.parse(raw) : []
+  } catch (err) {
+    console.error('Failed to read saved filters:', err)
+    return []
+  }
+}
+
+function persistSavedFilters(filters) {
+  try {
+    localStorage.setItem(SAVED_FILTERS_KEY, JSON.stringify(filters))
+  } catch (err) {
+    console.error('Failed to persist saved filters:', err)
+  }
+}
+
+const LIBRARY_PRESETS = [
+  { key: 'uncategorized', label: 'Uncategorized' },
+  { key: 'never_played', label: 'Never played' },
+  { key: 'started_not_active', label: 'Started, not active' },
+  { key: 'deferred', label: 'Deferred' }
+]
+
 function timeAgo(iso) {
   const d = new Date(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`)
   const mins = Math.max(0, Math.floor((Date.now() - d.getTime()) / 60000))
@@ -1017,11 +1053,19 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [platformFilter, setPlatformFilter] = useState('')
+  const [preset, setPreset] = useState('')
+  const [savedFilters, setSavedFilters] = useState(() => loadSavedFiltersFromStorage())
   const [loading, setLoading] = useState(false)
   const [enriching, setEnriching] = useState(false)
   const [enrichmentJob, setEnrichmentJob] = useState(null)
   const [autoTagMsg, setAutoTagMsg] = useState('')
   const [automation, setAutomation] = useState(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState(new Set())
+  const [bulkStatus, setBulkStatus] = useState('')
+  const [bulkAttention, setBulkAttention] = useState('')
+  const [bulkSessionTags, setBulkSessionTags] = useState('')
+  const [bulkApplying, setBulkApplying] = useState(false)
 
   const loadLibrary = useCallback(async () => {
     setLoading(true)
@@ -1030,6 +1074,10 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
       if (attentionFilter) params.attention_level = attentionFilter
       if (platformFilter) params.platform = platformFilter
       if (search) params.search = search
+      if (preset === 'uncategorized') params.attention_level = 'unset'
+      else if (preset === 'never_played') params.played = false
+      else if (preset === 'started_not_active') params.played = true
+      else if (preset === 'deferred') params.status = 'paused'
       const data = await fetchGames(params)
       setGames(data)
     } catch (err) {
@@ -1037,7 +1085,7 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
     } finally {
       setLoading(false)
     }
-  }, [attentionFilter, platformFilter, search])
+  }, [attentionFilter, platformFilter, search, preset])
 
   useEffect(() => {
     loadLibrary()
@@ -1136,6 +1184,22 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
 
   const handleSearch = async (e) => {
     setSearch(e.target.value)
+    setSelected(new Set())
+  }
+
+  const handleAttentionFilterChange = (e) => {
+    setAttentionFilter(e.target.value)
+    setSelected(new Set())
+  }
+
+  const handlePlatformFilterChange = (e) => {
+    setPlatformFilter(e.target.value)
+    setSelected(new Set())
+  }
+
+  const handleTogglePreset = (key) => {
+    setPreset(prev => prev === key ? '' : key)
+    setSelected(new Set())
   }
 
   const handleDelete = async (game) => {
@@ -1148,6 +1212,82 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
       setAutoTagMsg(err.response?.data?.detail || 'Failed to remove game.')
       setTimeout(() => setAutoTagMsg(''), 5000)
     }
+  }
+
+  const handleToggleSelectMode = () => {
+    setSelectMode(prev => !prev)
+    setSelected(new Set())
+  }
+
+  const handleToggleSelect = (id) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const handleBulkApply = async () => {
+    if (selected.size === 0) return
+    const payload = { app_ids: Array.from(selected) }
+    if (bulkStatus) payload.status = bulkStatus
+    if (bulkAttention) payload.attention_level = bulkAttention
+    if (bulkSessionTags === 'clear') payload.session_tags = null
+    else if (bulkSessionTags) payload.session_tags = bulkSessionTags
+
+    if (!window.confirm(`Apply changes to ${selected.size} games?`)) return
+
+    setBulkApplying(true)
+    try {
+      const res = await bulkUpdateGames(payload)
+      setAutoTagMsg(`Updated ${res.updated} games`)
+      setSelected(new Set())
+      setBulkStatus('')
+      setBulkAttention('')
+      setBulkSessionTags('')
+      loadLibrary()
+      setTimeout(() => setAutoTagMsg(''), 3000)
+    } catch (err) {
+      console.error(err)
+      setAutoTagMsg(err.response?.data?.detail || 'Failed to update games.')
+      setTimeout(() => setAutoTagMsg(''), 5000)
+    } finally {
+      setBulkApplying(false)
+    }
+  }
+
+  const handleSaveFilter = () => {
+    const name = window.prompt('Name this filter:')
+    if (name === null) return
+    const trimmed = name.trim()
+    if (!trimmed) {
+      setAutoTagMsg('Filter name cannot be empty.')
+      setTimeout(() => setAutoTagMsg(''), 3000)
+      return
+    }
+    if (savedFilters.some(f => f.name.toLowerCase() === trimmed.toLowerCase())) {
+      setAutoTagMsg(`A filter named "${trimmed}" already exists.`)
+      setTimeout(() => setAutoTagMsg(''), 3000)
+      return
+    }
+    const next = [...savedFilters, { name: trimmed, search, attention: attentionFilter, platform: platformFilter, preset }]
+    setSavedFilters(next)
+    persistSavedFilters(next)
+  }
+
+  const handleApplySavedFilter = (filter) => {
+    setSearch(filter.search || '')
+    setAttentionFilter(filter.attention || '')
+    setPlatformFilter(filter.platform || '')
+    setPreset(filter.preset || '')
+    setSelected(new Set())
+  }
+
+  const handleDeleteSavedFilter = (name) => {
+    const next = savedFilters.filter(f => f.name !== name)
+    setSavedFilters(next)
+    persistSavedFilters(next)
   }
 
   const handleEditGenre = async (game) => {
@@ -1195,13 +1335,13 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
             onChange={handleSearch}
             className="search-input"
           />
-          <select value={attentionFilter} onChange={(e) => setAttentionFilter(e.target.value)} className="att-filter">
+          <select value={attentionFilter} onChange={handleAttentionFilterChange} className="att-filter">
             <option value="">All Attention</option>
             <option value="unset">Uncategorized</option>
             <option value="casual">☕ Casual</option>
             <option value="focused">🎯 Focused</option>
           </select>
-          <select value={platformFilter} onChange={(e) => setPlatformFilter(e.target.value)} className="att-filter">
+          <select value={platformFilter} onChange={handlePlatformFilterChange} className="att-filter">
             <option value="">All Platforms</option>
             <option value="steam">Steam</option>
             <option value="switch">Switch</option>
@@ -1217,7 +1357,42 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
           <button className="secondary-btn" onClick={handleEnrich} disabled={loading || enriching} title="Fetch metadata from Steam">
             {enriching ? 'Enriching...' : '☁️ Enrich'}
           </button>
+          <button className={`secondary-btn ${selectMode ? 'active' : ''}`} onClick={handleToggleSelectMode}>
+            {selectMode ? '✓ Selecting' : 'Select'}
+          </button>
+          {selectMode && <span className="selected-count">{selected.size} selected</span>}
         </div>
+        <div className="preset-row">
+          {LIBRARY_PRESETS.map(opt => (
+            <button
+              key={opt.key}
+              type="button"
+              className={`planner-chip ${preset === opt.key ? 'active' : ''}`}
+              onClick={() => handleTogglePreset(opt.key)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {savedFilters.map(filter => (
+            <span key={filter.name} className="saved-filter-chip">
+              <button type="button" className="planner-chip" onClick={() => handleApplySavedFilter(filter)}>
+                {filter.name}
+              </button>
+              <button
+                type="button"
+                className="chip-remove"
+                aria-label={`Delete saved filter ${filter.name}`}
+                onClick={() => handleDeleteSavedFilter(filter.name)}
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          {(search || attentionFilter || platformFilter || preset) && (
+            <button type="button" className="secondary-btn" onClick={handleSaveFilter}>Save filter</button>
+          )}
+        </div>
+        <p className="library-count">{games.length} games</p>
         {autoTagMsg && <p className="success-msg">{autoTagMsg}</p>}
         {automationParts.length > 0 && (
           <p className="automation-status">
@@ -1261,11 +1436,59 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
               onDelete={handleDelete}
               onEditGenre={handleEditGenre}
               onOpenDetail={onOpenDetail}
+              selectable={selectMode}
+              selectedState={selected.has(game.id)}
+              onToggleSelect={handleToggleSelect}
             />
           ))}
           {games.length === 0 && (
             <EmptyState title="No games found" message="Try a different search or attention filter." />
           )}
+        </div>
+      )}
+      {selectMode && selected.size > 0 && (
+        <div className="bulk-bar">
+          <span className="bulk-count">{selected.size} selected</span>
+          <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+            <option value="">— Status —</option>
+            <option value="library">Library</option>
+            <option value="up_next">Up Next</option>
+            <option value="playing">Playing</option>
+            <option value="paused">Paused</option>
+            <option value="completed">Completed</option>
+            <option value="abandoned">Abandoned</option>
+          </select>
+          <div className="attention-btns">
+            {[
+              { value: 'casual', label: '☕', className: 'btn-casual' },
+              { value: 'focused', label: '🎯', className: 'btn-focused' },
+              { value: 'unset', label: 'None', className: 'btn-unset' }
+            ].map(opt => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`att-btn ${opt.className} ${bulkAttention === opt.value ? 'active' : ''}`}
+                onClick={() => setBulkAttention(bulkAttention === opt.value ? '' : opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <select value={bulkSessionTags} onChange={(e) => setBulkSessionTags(e.target.value)}>
+            <option value="">— Session tags —</option>
+            <option value="burst_friendly">Burst-friendly</option>
+            <option value="controller_only">Controller only</option>
+            <option value="podcast_friendly">Podcast-friendly</option>
+            <option value="clear">Clear tags</option>
+          </select>
+          <button
+            className="primary-btn"
+            onClick={handleBulkApply}
+            disabled={bulkApplying || !(bulkStatus || bulkAttention || bulkSessionTags)}
+          >
+            {bulkApplying ? 'Applying...' : 'Apply'}
+          </button>
+          <button className="secondary-btn" onClick={() => setSelected(new Set())}>Clear selection</button>
         </div>
       )}
     </div>

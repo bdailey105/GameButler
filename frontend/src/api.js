@@ -51,6 +51,11 @@ export const reorderQueue = async (appIds) => {
   return response.data;
 };
 
+export const bulkUpdateGames = async (payload) => {
+  const response = await api.put('/games/bulk', payload);
+  return response.data;
+};
+
 export const getRecommendation = async (params = {}) => {
   const response = await api.get('/recommend', { params });
   return response.data;
