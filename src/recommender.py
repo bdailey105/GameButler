@@ -87,11 +87,12 @@ class GameRecommender:
 
         filtered_df = self.df.copy()
 
-        # Default Filter: Exclude Completed and Abandoned.
-        # Assuming we want to play things we haven't finished or abandoned.
+        # Default Filter: Exclude Completed, Abandoned, and Paused.
+        # Assuming we want to play things we haven't finished, abandoned, or set aside.
+        # Paused games are reachable via continuation-oriented planning, not this filter.
         if 'status' in filtered_df.columns:
             status = self.normalize_values(filtered_df['status'])
-            filtered_df = filtered_df[~status.isin([GameStatus.COMPLETED.value, GameStatus.ABANDONED.value])]
+            filtered_df = filtered_df[~status.isin([GameStatus.COMPLETED.value, GameStatus.ABANDONED.value, GameStatus.PAUSED.value])]
 
         # Filter by playtime
         if unplayed_only:

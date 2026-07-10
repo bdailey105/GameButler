@@ -7,6 +7,7 @@ import os
 import shutil
 import pandas as pd
 import asyncio
+import re
 import tempfile
 from typing import Optional, List, Literal
 from datetime import datetime, timezone, timedelta
@@ -14,7 +15,7 @@ from sqlmodel import Session, select, col, or_
 from sqlalchemy import case
 
 from src.data_loader import load_steam_library
-from src.recommender import GameRecommender
+from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
 from src.logic import apply_attention_heuristics
@@ -76,6 +77,28 @@ def sync_recommender_with_db():
         else:
             recommender = GameRecommender(pd.DataFrame())
             print("Recommender initialized with empty data (DB is empty).")
+
+def estimate_remaining(game) -> Optional[dict]:
+    """Metadata-derived remaining-time estimate. Never a completion tracker.
+    Returns None when average_playtime is missing/zero or implausible
+    (avoid inventing numbers). playtime >= average -> beyond_typical."""
+    average = game.average_playtime
+    if average is None or average <= 0:
+        return None
+
+    if game.playtime_forever >= average:
+        return {
+            "minutes": 0,
+            "confidence": "beyond_typical",
+            "label": "Playtime already exceeds the typical time to beat",
+        }
+
+    minutes = average - game.playtime_forever
+    return {
+        "minutes": minutes,
+        "confidence": "rough_estimate",
+        "label": f"~{_format_hours(minutes)} left — rough estimate from HowLongToBeat, not actual progress",
+    }
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -579,6 +602,7 @@ async def get_game(app_id: int, session: Session = Depends(get_session)):
 
     result = game.model_dump()
     result["journal"] = [entry.model_dump() for entry in entries]
+    result["remaining_estimate"] = estimate_remaining(game)
     return result
 
 @app.post("/games/{app_id}/journal", response_model=JournalEntry)
@@ -955,6 +979,123 @@ async def clear_recommendation_decisions(session: Session = Depends(get_session)
     session.commit()
     sync_recommender_with_db()
     return {"cleared": count}
+
+CONTINUATION_STATUS_PRIORITY = {
+    GameStatus.PLAYING: 0,
+    GameStatus.UP_NEXT: 1,
+    GameStatus.PAUSED: 2,
+}
+
+# Same burst-friendly tag family the "short_session" mood uses in the recommender.
+SHORT_SESSION_TAG_PATTERN = re.compile(
+    r"Roguelike|Roguelite|Arcade|Puzzle|Casual|Platformer|Card Game", re.IGNORECASE
+)
+
+# NOTE: this must stay above the plain GET /recommend route below — a literal
+# "/recommend/continuation" path segment would otherwise be ambiguous if /recommend
+# ever grows a path parameter. There is no ambiguity today, but declaring it first
+# keeps that invariant cheap to preserve.
+@app.get("/recommend/continuation")
+async def recommend_continuation(session: Session = Depends(get_session)):
+    candidates = session.exec(
+        select(Game).where(
+            col(Game.status).in_([GameStatus.PLAYING, GameStatus.UP_NEXT, GameStatus.PAUSED])
+        )
+    ).all()
+
+    if not candidates:
+        return {"short": [], "session": [], "finish": []}
+
+    game_ids = [game.id for game in candidates]
+    events = session.exec(
+        select(PlayEvent)
+        .where(col(PlayEvent.game_id).in_(game_ids))
+        .order_by(PlayEvent.created_at.desc())
+    ).all()
+    last_activity = {}
+    for event in events:
+        last_activity.setdefault(event.game_id, event.created_at)
+
+    now = utc_now()
+    items = []
+    for game in candidates:
+        estimate = estimate_remaining(game)
+        reasons = []
+
+        if game.status == GameStatus.PLAYING:
+            reasons.append("You're playing this now")
+        elif game.status == GameStatus.UP_NEXT:
+            reasons.append("Next in your queue")
+        elif game.status == GameStatus.PAUSED:
+            reasons.append(f"Paused — {game.return_when}" if game.return_when else "Paused")
+
+        last_active = last_activity.get(game.id)
+        if last_active is not None:
+            last_active_aware = last_active if last_active.tzinfo else last_active.replace(tzinfo=timezone.utc)
+            if now - last_active_aware < timedelta(days=7):
+                reasons.append("Active in the last 7 days")
+
+        if estimate is not None:
+            reasons.append(estimate["label"])
+
+        items.append({"game": game, "estimate": estimate, "reasons": reasons})
+
+    def rank_key(item):
+        game = item["game"]
+        estimate = item["estimate"]
+        minutes_key = (1, 0) if estimate is None else (0, estimate["minutes"])
+        return (CONTINUATION_STATUS_PRIORITY[game.status], minutes_key, game.name.lower())
+
+    ranked = sorted(items, key=rank_key)
+
+    def build_bucket(predicate, cap: int = 3, fallback: bool = False):
+        bucket = [item for item in ranked if predicate(item)]
+        if fallback and len(bucket) < cap:
+            chosen_ids = {item["game"].id for item in bucket}
+            for item in ranked:
+                if len(bucket) >= cap:
+                    break
+                if item["game"].id in chosen_ids:
+                    continue
+                bucket.append(item)
+                chosen_ids.add(item["game"].id)
+            bucket.sort(key=rank_key)
+        return bucket[:cap]
+
+    def is_short_candidate(item) -> bool:
+        game = item["game"]
+        estimate = item["estimate"]
+        if game.session_tags and "burst_friendly" in game.session_tags:
+            return True
+        if game.tags and SHORT_SESSION_TAG_PATTERN.search(game.tags):
+            return True
+        if estimate is not None and estimate["minutes"] <= 60:
+            return True
+        return False
+
+    def is_session_candidate(item) -> bool:
+        estimate = item["estimate"]
+        return estimate is not None and 60 < estimate["minutes"] <= 240
+
+    def is_finish_candidate(item) -> bool:
+        estimate = item["estimate"]
+        if estimate is None:
+            return False
+        if estimate["confidence"] == "beyond_typical":
+            return True
+        return estimate["confidence"] == "rough_estimate" and estimate["minutes"] <= 720
+
+    def serialize(item):
+        result = item["game"].model_dump()
+        result["remaining_estimate"] = item["estimate"]
+        result["reasons"] = item["reasons"]
+        return result
+
+    return {
+        "short": [serialize(item) for item in build_bucket(is_short_candidate)],
+        "session": [serialize(item) for item in build_bucket(is_session_candidate, fallback=True)],
+        "finish": [serialize(item) for item in build_bucket(is_finish_candidate)],
+    }
 
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(

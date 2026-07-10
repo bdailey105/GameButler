@@ -13,6 +13,7 @@
   --status-queued: #4f8ef7;
   --status-done: rgba(232, 234, 240, 0.3);
   --status-error: #f44336;
+  --status-paused: #8a7cd8;
   --text-primary: #e8eaf0;
   --text-secondary: rgba(232, 234, 240, 0.6);
   --text-tertiary: rgba(232, 234, 240, 0.38);
@@ -176,6 +177,118 @@ h2 {
   font-weight: 800;
   letter-spacing: 0.18em;
   text-transform: uppercase;
+}
+
+.butler-mode-toggle {
+  display: inline-flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-5);
+  padding: var(--space-1);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-overlay);
+}
+
+.butler-mode-toggle button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  padding: 0.5rem 1.1rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  transition: background 0.16s, color 0.16s, border-color 0.16s;
+}
+
+.butler-mode-toggle button:hover {
+  color: var(--text-secondary);
+}
+
+.butler-mode-toggle button.active {
+  background: var(--brand-tint);
+  border-color: var(--border-active);
+  color: var(--brand-light);
+}
+
+.ladder-group {
+  margin-bottom: var(--space-5);
+}
+
+.ladder-group h3 {
+  margin: 0 0 var(--space-3);
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ladder-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.ladder-card-art,
+.ladder-card-placeholder {
+  width: 84px;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.ladder-card-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  font-weight: 850;
+}
+
+.ladder-card-info {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ladder-card-name {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.ladder-card-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ladder-estimate {
+  color: var(--text-tertiary);
+  font-size: 0.78rem;
+}
+
+.ladder-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
 }
 
 .filter-grid {
@@ -467,7 +580,7 @@ select:focus-visible {
 }
 
 .backlog-board {
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .dashboard-column,
@@ -578,6 +691,7 @@ select:focus-visible {
 .game-card.status-playing::before { background: var(--status-playing); }
 .game-card.status-completed::before { background: var(--status-done); }
 .game-card.status-abandoned::before { background: var(--status-error); }
+.game-card.status-paused::before { background: var(--status-paused); }
 .game-card.attention-casual { border-left: 3px solid var(--status-casual); }
 .game-card.attention-focused { border-left: 3px solid var(--status-playing); }
 

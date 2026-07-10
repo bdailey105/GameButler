@@ -21,6 +21,7 @@ class GameStatus(str, Enum):
     LIBRARY = "library"
     UP_NEXT = "up_next"
     PLAYING = "playing"
+    PAUSED = "paused"
     COMPLETED = "completed"
     ABANDONED = "abandoned"
 
@@ -48,6 +49,7 @@ class GameBase(SQLModel):
     completed_on: Optional[date] = None
     current_note: Optional[str] = None  # concise "where I left off"
     session_tags: Optional[str] = None  # semicolon list: burst_friendly;controller_only;podcast_friendly
+    return_when: Optional[str] = None  # optional "return when..." note for paused games
 
     @field_validator("session_tags")
     @classmethod
@@ -75,6 +77,7 @@ class GameUpdate(SQLModel):
     completed_on: Optional[date] = None
     current_note: Optional[str] = None
     session_tags: Optional[str] = None
+    return_when: Optional[str] = None
 
     @field_validator("session_tags")
     @classmethod
