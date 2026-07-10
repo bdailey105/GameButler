@@ -187,6 +187,6 @@
 
 ## Epic 30: Unified Library Import
 **Goal:** Unify non-Steam ownership with safe local imports before attempting account-linking integrations.
-- [ ] **Story 30.1: Source-Aware External Identity** — Persist source and external IDs with duplicate prevention while preserving manual and Steam records.
-- [ ] **Story 30.2: Preview-First External Import** — Accept a documented normalized CSV, preview all changes, and preserve personal curation by default.
-- [ ] **Story 30.3: Unified Import UI & Source Filters** — Guide external imports in the UI and allow combined source/platform/status/attention filters.
+- [x] **Story 30.1: Source-Aware External Identity** — `source`/`external_id` columns + partial unique index (migration 010, NULL rows exempt so Steam/manual records can't collide); duplicate (source, external_id) rejected at the DB level.
+- [x] **Story 30.2: Preview-First External Import** — Documented normalized CSV (docs/import-format.md); preview classifies new/updated/skipped/duplicate/invalid with actionable row errors (steam rows rejected — Steam has sync); import matches by source+external_id else name+platform, fills only missing metadata unless replace_metadata opted in; personal fields never touched; idempotent re-imports.
+- [x] **Story 30.3: Unified Import UI & Source Filters** — Guided flow on Upload page (preview stats → replace checkbox → confirm → results) with visible "no account credentials requested or stored" note; Source filter in Library combining with all existing filters; drawer shows source · external_id for imported games only.

@@ -811,6 +811,192 @@ def test_upload_rolls_back_on_failure(client):
     with Session(engine) as session:
         assert session.exec(select(Game)).all() == []
 
+def test_import_external_preview_classifies_mixed_rows(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1_000_000_001,
+            name="Existing By External",
+            platform="switch",
+            source="nintendo_export",
+            external_id="ext1",
+            genre="Unknown",
+            tags="Unknown",
+            playtime_forever=0,
+        ))
+        session.add(Game(
+            id=1_000_000_002,
+            name="Existing By Name",
+            platform="playstation",
+            genre="RPG",
+            tags="JRPG",
+            playtime_forever=800,
+        ))
+        session.commit()
+
+    csv = (
+        "title,platform,source,external_id,genre,tags,playtime_minutes\n"
+        "New Game A,switch,nintendo_export,,Action,Platformer,120\n"
+        "Whatever Name,switch,nintendo_export,ext1,Action,Platformer,500\n"
+        "Existing By Name,playstation,personal_export,,,,\n"
+        "New Game A,switch,nintendo_export,,Action,Platformer,120\n"
+        "Bad Platform Game,steam,x,,,,\n"
+        ",switch,x,,,,\n"
+    )
+    response = client.post("/import/external/preview", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_rows"] == 6
+    assert data["new"] == 1
+    assert data["updated"] == 1
+    assert data["skipped"] == 1
+    assert data["duplicates"] == 1
+    assert len(data["invalid"]) == 2
+    errors = {entry["row"]: entry["error"] for entry in data["invalid"]}
+    assert "steam" in errors[5]
+    assert "title" in errors[6]
+
+    # Preview never writes.
+    with Session(engine) as session:
+        assert session.exec(select(Game)).all().__len__() == 2
+
+def test_import_external_creates_new_game_above_manual_id_floor(client):
+    csv = (
+        "title,platform,source,external_id,genre,tags,playtime_minutes\n"
+        "Super Mario Odyssey,switch,nintendo_export,ext500,Platformer,3D,600\n"
+    )
+    response = client.post("/import/external", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 1
+    assert data["updated"] == 0
+    assert data["skipped"] == 0
+    assert data["duplicates"] == 0
+    assert data["invalid"] == []
+
+    with Session(engine) as session:
+        game = session.exec(
+            select(Game).where(Game.source == "nintendo_export", Game.external_id == "ext500")
+        ).first()
+        assert game is not None
+        assert game.id >= 1_000_000_000
+        assert game.name == "Super Mario Odyssey"
+        assert game.platform == "switch"
+        assert game.genre == "Platformer"
+        assert game.tags == "3D"
+        assert game.playtime_forever == 600
+        assert game.status == GameStatus.LIBRARY
+        assert game.attention_level == AttentionLevel.UNSET
+
+def test_import_external_reimport_same_file_is_idempotent(client):
+    csv = (
+        "title,platform,source,external_id,genre,tags,playtime_minutes\n"
+        "Metroid Prime Remastered,switch,nintendo_export,ext1,Action,Platformer,540\n"
+        "Chrono Trigger,retro,personal_spreadsheet,ext2,RPG,Classic,900\n"
+    )
+    first = client.post("/import/external", files=csv_file(csv))
+    assert first.status_code == 200
+    assert first.json()["imported"] == 2
+
+    second = client.post("/import/external", files=csv_file(csv))
+    assert second.status_code == 200
+    data = second.json()
+    assert data["imported"] == 0
+    assert data["updated"] == 0
+    assert data["skipped"] == 2
+    assert data["duplicates"] == 0
+    assert data["invalid"] == []
+
+def test_import_external_matched_game_keeps_personal_fields_fills_missing_genre(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1,
+            name="Personal Game",
+            platform="switch",
+            genre="Unknown",
+            tags="Adventure Game",
+            playtime_forever=300,
+            status=GameStatus.PLAYING,
+            personal_rating=5,
+            current_note="On level 3",
+        ))
+        session.commit()
+
+    csv = (
+        "title,platform,source,external_id,genre,tags,playtime_minutes\n"
+        "Personal Game,switch,nintendo_export,,Adventure,Open World,600\n"
+    )
+    response = client.post("/import/external", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["imported"] == 0
+    assert data["updated"] == 1
+    assert data["skipped"] == 0
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.genre == "Adventure"  # filled: was Unknown
+        assert game.tags == "Adventure Game"  # untouched: already had a value
+        assert game.playtime_forever == 300  # untouched: already nonzero
+        assert game.status == GameStatus.PLAYING
+        assert game.personal_rating == 5
+        assert game.current_note == "On level 3"
+
+def test_import_external_replace_metadata_overwrites_catalog_fields_only(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1,
+            name="Replace Game",
+            platform="switch",
+            genre="OldGenre",
+            tags="OldTags",
+            playtime_forever=100,
+            status=GameStatus.PAUSED,
+            personal_rating=3,
+            current_note="Paused note",
+        ))
+        session.commit()
+
+    csv = (
+        "title,platform,source,external_id,genre,tags,playtime_minutes\n"
+        "Replace Game,switch,nintendo_export,,NewGenre,NewTags,999\n"
+    )
+    response = client.post("/import/external", files=csv_file(csv), data={"replace_metadata": "true"})
+
+    assert response.status_code == 200
+    assert response.json()["updated"] == 1
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.genre == "NewGenre"
+        assert game.tags == "NewTags"
+        assert game.playtime_forever == 999
+        assert game.status == GameStatus.PAUSED
+        assert game.personal_rating == 3
+        assert game.current_note == "Paused note"
+
+def test_import_external_steam_platform_row_is_invalid(client):
+    csv = "title,platform,source\nSteam Game,steam,manual\n"
+    response = client.post("/import/external/preview", files=csv_file(csv))
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["invalid"]) == 1
+    assert "steam" in data["invalid"][0]["error"]
+
+def test_import_external_missing_headers_returns_400(client):
+    csv = "title,platform\nMetroid,switch\n"
+
+    preview_response = client.post("/import/external/preview", files=csv_file(csv))
+    assert preview_response.status_code == 400
+    assert "source" in preview_response.json()["detail"]
+
+    import_response = client.post("/import/external", files=csv_file(csv))
+    assert import_response.status_code == 400
+    assert "source" in import_response.json()["detail"]
+
 @pytest.mark.asyncio
 async def test_process_enrichment_records_failures(client):
     with Session(engine) as session:

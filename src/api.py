@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Form, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from sqlmodel import Session, select, col, or_
 from sqlalchemy import case
 
-from src.data_loader import load_steam_library
+from src.data_loader import load_steam_library, load_external_library, EXTERNAL_VALID_PLATFORMS
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
 from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
@@ -202,6 +202,26 @@ class ImportPreviewResponse(BaseModel):
     unchanged_games: int
     duplicate_rows: int
     duplicate_app_ids: List[int] = []
+
+class ExternalImportInvalidRow(BaseModel):
+    row: int
+    error: str
+
+class ExternalImportPreviewResponse(BaseModel):
+    filename: str
+    total_rows: int
+    new: int
+    updated: int
+    skipped: int
+    duplicates: int
+    invalid: List[ExternalImportInvalidRow] = []
+
+class ExternalImportResponse(BaseModel):
+    imported: int
+    updated: int
+    skipped: int
+    duplicates: int
+    invalid: List[ExternalImportInvalidRow] = []
 
 # Steam AppIDs are far below this; manual/non-Steam games are allocated ids
 # from this floor upward, so collisions with Steam sync/CSV import are impossible.
@@ -894,6 +914,218 @@ async def upload_library(file: UploadFile = File(...), session: Session = Depend
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=400, detail=f"Failed to process file: {str(e)}")
+
+def _clean_external_cell(value) -> Optional[str]:
+    """Normalizes a pandas cell to a stripped string, or None if blank/NaN."""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text = str(value).strip()
+    return text or None
+
+def _external_row_would_update(game: Game, genre: Optional[str], tags: Optional[str], playtime_minutes: Optional[float]) -> bool:
+    """Whether the fill-only (non-replace) rule would actually change `game`."""
+    if genre and (not game.genre or game.genre == "Unknown"):
+        return True
+    if tags and (not game.tags or game.tags == "Unknown"):
+        return True
+    if playtime_minutes is not None and not game.playtime_forever:
+        return True
+    return False
+
+def _apply_external_metadata(game: Game, genre: Optional[str], tags: Optional[str], playtime_minutes: Optional[float], replace_metadata: bool) -> bool:
+    """Fills (or, if replace_metadata, overwrites) genre/tags/playtime from an import row.
+    Never touches status/attention/personal fields. Returns whether anything changed."""
+    changed = False
+    if genre and (replace_metadata or not game.genre or game.genre == "Unknown"):
+        if game.genre != genre:
+            game.genre = genre
+            changed = True
+    if tags and (replace_metadata or not game.tags or game.tags == "Unknown"):
+        if game.tags != tags:
+            game.tags = tags
+            changed = True
+    if playtime_minutes is not None and (replace_metadata or not game.playtime_forever):
+        new_playtime = int(playtime_minutes)
+        if game.playtime_forever != new_playtime:
+            game.playtime_forever = new_playtime
+            changed = True
+    return changed
+
+def classify_external_import_rows(df: pd.DataFrame, session: Session) -> List[dict]:
+    """Validates and classifies each row of a normalized external-library import.
+
+    Returns one entry per data row (1-based, matching the file), each with a
+    `status` of invalid/duplicate/new/updated/skipped and the parsed fields
+    needed to write it (or an `error` for invalid rows). See docs/import-format.md.
+    """
+    results = []
+    seen_identities = set()
+
+    for position, row in enumerate(df.to_dict("records"), start=1):
+        title = _clean_external_cell(row.get("title"))
+        platform = (_clean_external_cell(row.get("platform")) or "").lower()
+        source = _clean_external_cell(row.get("source"))
+        external_id = _clean_external_cell(row.get("external_id"))
+        genre = _clean_external_cell(row.get("genre"))
+        tags = _clean_external_cell(row.get("tags"))
+        playtime_raw = _clean_external_cell(row.get("playtime_minutes"))
+
+        error = None
+        if not title:
+            error = "title is required"
+        elif platform == "steam":
+            error = "platform 'steam' is not supported for import — Steam games sync automatically via Steam Sync"
+        elif platform not in EXTERNAL_VALID_PLATFORMS:
+            error = f"unsupported platform '{platform}'. Valid platforms: {', '.join(sorted(EXTERNAL_VALID_PLATFORMS))}"
+
+        playtime_minutes = None
+        if error is None and playtime_raw is not None:
+            try:
+                playtime_minutes = float(playtime_raw)
+            except ValueError:
+                error = f"playtime_minutes '{playtime_raw}' is not numeric"
+
+        if error:
+            results.append({"row": position, "status": "invalid", "error": f"Row {position}: {error}"})
+            continue
+
+        identity_key = ("source_id", source, external_id) if external_id else ("name_platform", title.lower(), platform)
+        if identity_key in seen_identities:
+            results.append({"row": position, "status": "duplicate", "error": None})
+            continue
+        seen_identities.add(identity_key)
+
+        if external_id:
+            matched_game = session.exec(
+                select(Game).where(Game.source == source, Game.external_id == external_id)
+            ).first()
+        else:
+            matched_game = session.exec(
+                select(Game).where(col(Game.name).ilike(title), Game.platform == platform)
+            ).first()
+
+        entry = {
+            "row": position,
+            "error": None,
+            "title": title,
+            "platform": platform,
+            "source": source,
+            "external_id": external_id,
+            "genre": genre,
+            "tags": tags,
+            "playtime_minutes": playtime_minutes,
+            "matched_game": matched_game,
+        }
+        if matched_game:
+            entry["status"] = "updated" if _external_row_would_update(matched_game, genre, tags, playtime_minutes) else "skipped"
+        else:
+            entry["status"] = "new"
+        results.append(entry)
+
+    return results
+
+@app.post("/import/external/preview", response_model=ExternalImportPreviewResponse)
+async def preview_external_import(file: UploadFile = File(...), session: Session = Depends(get_session)):
+    temp_file_path = save_upload_to_temp(file)
+    try:
+        df = load_external_library(temp_file_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        os.remove(temp_file_path)
+
+    rows = classify_external_import_rows(df, session)
+
+    counts = {"new": 0, "updated": 0, "skipped": 0, "duplicates": 0}
+    invalid = []
+    for entry in rows:
+        if entry["status"] == "invalid":
+            invalid.append({"row": entry["row"], "error": entry["error"]})
+        elif entry["status"] == "duplicate":
+            counts["duplicates"] += 1
+        else:
+            counts[entry["status"]] += 1
+
+    return ExternalImportPreviewResponse(
+        filename=file.filename or "library.csv",
+        total_rows=len(df),
+        new=counts["new"],
+        updated=counts["updated"],
+        skipped=counts["skipped"],
+        duplicates=counts["duplicates"],
+        invalid=invalid,
+    )
+
+@app.post("/import/external", response_model=ExternalImportResponse)
+async def import_external_library(
+    file: UploadFile = File(...),
+    replace_metadata: bool = Form(False),
+    session: Session = Depends(get_session),
+):
+    temp_file_path = save_upload_to_temp(file)
+    try:
+        df = load_external_library(temp_file_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        os.remove(temp_file_path)
+
+    rows = classify_external_import_rows(df, session)
+
+    existing_ids = session.exec(select(Game.id).where(Game.id >= MANUAL_ID_FLOOR)).all()
+    next_id = max(existing_ids, default=MANUAL_ID_FLOOR - 1) + 1
+
+    imported = 0
+    updated = 0
+    skipped = 0
+    duplicates = 0
+    invalid = []
+
+    for entry in rows:
+        if entry["status"] == "invalid":
+            invalid.append({"row": entry["row"], "error": entry["error"]})
+            continue
+        if entry["status"] == "duplicate":
+            duplicates += 1
+            continue
+        if entry["status"] == "new":
+            playtime_minutes = entry["playtime_minutes"]
+            game = Game(
+                id=next_id,
+                name=entry["title"],
+                platform=entry["platform"],
+                source=entry["source"],
+                external_id=entry["external_id"],
+                genre=entry["genre"] or "Unknown",
+                tags=entry["tags"] or "Unknown",
+                playtime_forever=int(playtime_minutes) if playtime_minutes is not None else 0,
+                status=GameStatus.LIBRARY,
+                attention_level=AttentionLevel.UNSET,
+                # ponytail: no SteamGridDB art lookup here — a batch import would hammer
+                # the API; header images stay unset until the enrich flow picks them up.
+            )
+            next_id += 1
+            session.add(game)
+            imported += 1
+        else:
+            game = entry["matched_game"]
+            changed = _apply_external_metadata(game, entry["genre"], entry["tags"], entry["playtime_minutes"], replace_metadata)
+            if changed:
+                session.add(game)
+                updated += 1
+            else:
+                skipped += 1
+
+    session.commit()
+    sync_recommender_with_db()
+
+    return ExternalImportResponse(
+        imported=imported,
+        updated=updated,
+        skipped=skipped,
+        duplicates=duplicates,
+        invalid=invalid,
+    )
 
 async def run_steam_sync(session: Session) -> dict:
     api_key = os.getenv("STEAM_API_KEY")

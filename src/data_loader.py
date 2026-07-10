@@ -59,3 +59,46 @@ def load_steam_library(file_path: str) -> pd.DataFrame:
         return df
     except Exception as e:
         raise ValueError(f"Error reading CSV file: {e}")
+
+# Normalized external (non-Steam) library import format. See docs/import-format.md.
+EXTERNAL_REQUIRED_HEADERS = ["title", "platform", "source"]
+EXTERNAL_OPTIONAL_HEADERS = ["external_id", "genre", "tags", "playtime_minutes"]
+# Steam is excluded on purpose: Steam has its own sync, so a "steam" row here is
+# invalid rather than silently accepted.
+EXTERNAL_VALID_PLATFORMS = {"switch", "playstation", "xbox", "pc", "retro"}
+
+def load_external_library(file_path: str) -> pd.DataFrame:
+    """
+    Loads a normalized external (non-Steam) library CSV for import.
+
+    Required headers (case-insensitive, whitespace-stripped): title, platform, source
+    Optional headers: external_id, genre, tags, playtime_minutes
+
+    Args:
+        file_path (str): Path to the CSV file.
+
+    Returns:
+        pd.DataFrame: DataFrame with lowercased column names, one row per input row.
+                      Optional columns are added (filled with None) if absent.
+                      Per-row validation (empty title, unsupported platform,
+                      non-numeric playtime_minutes) happens at the API layer, not here.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"The file '{file_path}' was not found.")
+
+    try:
+        df = pd.read_csv(file_path, dtype=str)
+    except Exception as e:
+        raise ValueError(f"Error reading CSV file: {e}")
+
+    df.columns = [str(column).strip().lower() for column in df.columns]
+
+    missing = [header for header in EXTERNAL_REQUIRED_HEADERS if header not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required headers: {', '.join(missing)}")
+
+    for optional in EXTERNAL_OPTIONAL_HEADERS:
+        if optional not in df.columns:
+            df[optional] = None
+
+    return df

@@ -2,6 +2,7 @@ import pytest
 import os
 from sqlmodel import Session, select, create_engine, SQLModel
 from sqlmodel.pool import StaticPool
+from sqlalchemy.exc import IntegrityError
 from src.models import Game, GameStatus, AttentionLevel
 from src.recommender import GameRecommender
 from src.database import ensure_game_columns, run_migrations
@@ -125,6 +126,7 @@ def test_migrations_are_recorded_and_idempotent():
         ("20260709_007_game_personal_context",),
         ("20260709_008_game_session_tags",),
         ("20260709_009_game_return_when",),
+        ("20260710_010_game_source_identity",),
     ]
     assert "header_image" in columns
     assert "short_description" in columns
@@ -138,6 +140,8 @@ def test_migrations_are_recorded_and_idempotent():
     assert "current_note" in columns
     assert "session_tags" in columns
     assert "return_when" in columns
+    assert "source" in columns
+    assert "external_id" in columns
 
 def test_platform_migration_runs_on_db_with_earlier_migrations_applied():
     """Regression: adding a column to an already-applied migration never runs.
@@ -341,6 +345,76 @@ def test_game_return_when_persists(session: Session):
     result = session.get(Game, 1)
     assert result.status == GameStatus.PAUSED
     assert result.return_when == "the DLC drops"
+
+def test_source_identity_migration_runs_on_db_with_earlier_migrations_applied():
+    """Regression: adding a column to an already-applied migration never runs.
+    Simulates a production DB where earlier migrations are recorded but the new
+    source/external_id columns are missing."""
+    old_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    with old_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE game (id INTEGER PRIMARY KEY, name TEXT, playtime_forever INTEGER)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO game (id, name, playtime_forever) VALUES (1, 'Existing Game', 42)"
+        )
+
+    with patch("src.database.engine", old_engine):
+        run_migrations()
+
+    with old_engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(game)")}
+        row = connection.exec_driver_sql(
+            "SELECT source, external_id FROM game WHERE id = 1"
+        ).first()
+
+    assert "source" in columns
+    assert "external_id" in columns
+    assert row == (None, None)
+
+def test_duplicate_source_external_id_raises_integrity_error():
+    """Two games with the same (source, external_id) pair collide on the partial
+    unique index, so a repeated import can never create a duplicate record."""
+    test_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(test_engine)
+    with patch("src.database.engine", test_engine):
+        run_migrations()
+
+    with Session(test_engine) as session:
+        session.add(Game(id=1, name="Mario Kart 8", playtime_forever=0, source="nintendo_export", external_id="abc123"))
+        session.commit()
+
+        session.add(Game(id=2, name="Mario Kart 8 Deluxe", playtime_forever=0, source="nintendo_export", external_id="abc123"))
+        with pytest.raises(IntegrityError):
+            session.commit()
+
+def test_games_with_null_source_coexist():
+    """Existing Steam/manual games (source and external_id both NULL) are exempt
+    from the partial unique index and can coexist without collision."""
+    test_engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    SQLModel.metadata.create_all(test_engine)
+    with patch("src.database.engine", test_engine):
+        run_migrations()
+
+    with Session(test_engine) as session:
+        session.add(Game(id=1, name="Manual Game 1", playtime_forever=0))
+        session.add(Game(id=2, name="Manual Game 2", playtime_forever=0))
+        session.commit()
+
+        results = session.exec(select(Game)).all()
+        assert len(results) == 2
 
 def test_journal_entries_persist_and_round_trip(session: Session):
     from src.models import JournalEntry

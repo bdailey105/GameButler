@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -333,6 +333,9 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
                 {game.genre && <span className="badge">{game.genre}</span>}
                 {game.platform && <span className="badge secondary">{PLATFORM_LABELS[game.platform] || game.platform}</span>}
               </div>
+              {game.source && (
+                <p className="drawer-source-meta">Source: {game.source}{game.external_id ? ` · ${game.external_id}` : ''}</p>
+              )}
               {game.short_description && <p className="drawer-description">{game.short_description}</p>}
             </div>
 
@@ -1053,6 +1056,7 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [platformFilter, setPlatformFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState('')
   const [preset, setPreset] = useState('')
   const [savedFilters, setSavedFilters] = useState(() => loadSavedFiltersFromStorage())
   const [loading, setLoading] = useState(false)
@@ -1197,6 +1201,11 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
     setSelected(new Set())
   }
 
+  const handleSourceFilterChange = (e) => {
+    setSourceFilter(e.target.value)
+    setSelected(new Set())
+  }
+
   const handleTogglePreset = (key) => {
     setPreset(prev => prev === key ? '' : key)
     setSelected(new Set())
@@ -1322,16 +1331,19 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
     }
   }
 
+  const sourceOptions = Array.from(new Set(games.map(g => g.source).filter(Boolean))).sort()
+  const visibleGames = sourceFilter ? games.filter(g => g.source === sourceFilter) : games
+
   return (
     <div className="view library-view">
       <section className="card library-header">
         <p className="eyebrow">Library</p>
         <h2>Library</h2>
         <div className="library-controls">
-          <input 
-            type="text" 
-            placeholder="Search games..." 
-            value={search} 
+          <input
+            type="text"
+            placeholder="Search games..."
+            value={search}
             onChange={handleSearch}
             className="search-input"
           />
@@ -1349,6 +1361,12 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
             <option value="xbox">Xbox</option>
             <option value="pc">PC</option>
             <option value="retro">Retro</option>
+          </select>
+          <select value={sourceFilter} onChange={handleSourceFilterChange} className="att-filter">
+            <option value="">All Sources</option>
+            {sourceOptions.map(source => (
+              <option key={source} value={source}>{source}</option>
+            ))}
           </select>
           <button className="secondary-btn" onClick={handleSync} disabled={loading || enriching}>🔄 Sync Steam</button>
           <button className="secondary-btn" onClick={handleAutoTag} disabled={loading} title="Auto-tag uncategorized games">
@@ -1392,7 +1410,7 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
             <button type="button" className="secondary-btn" onClick={handleSaveFilter}>Save filter</button>
           )}
         </div>
-        <p className="library-count">{games.length} games</p>
+        <p className="library-count">{visibleGames.length} games</p>
         {autoTagMsg && <p className="success-msg">{autoTagMsg}</p>}
         {automationParts.length > 0 && (
           <p className="automation-status">
@@ -1420,7 +1438,7 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
         <LoadingState />
       ) : (
         <div className="library-grid">
-          {games.map(game => (
+          {visibleGames.map(game => (
             <GameCard
               key={game.id}
               game={game}
@@ -1441,7 +1459,7 @@ function LibraryView({ onMove, onAttentionChange, onOpenDetail }) {
               onToggleSelect={handleToggleSelect}
             />
           ))}
-          {games.length === 0 && (
+          {visibleGames.length === 0 && (
             <EmptyState title="No games found" message="Try a different search or attention filter." />
           )}
         </div>
@@ -1621,6 +1639,14 @@ function UploadView({ onUploaded }) {
   const [manualMsg, setManualMsg] = useState('')
   const [addingGame, setAddingGame] = useState(false)
 
+  const [extFile, setExtFile] = useState(null)
+  const [extPreview, setExtPreview] = useState(null)
+  const [extReplaceMetadata, setExtReplaceMetadata] = useState(false)
+  const [extResultMsg, setExtResultMsg] = useState('')
+  const [extErrorMsg, setExtErrorMsg] = useState('')
+  const [extPreviewing, setExtPreviewing] = useState(false)
+  const [extImporting, setExtImporting] = useState(false)
+
   const handlePreview = async (event) => {
     const file = event.target.files[0]
     if (!file) return
@@ -1674,6 +1700,50 @@ function UploadView({ onUploaded }) {
     }
   }
 
+  const handleExtFileChange = (event) => {
+    const file = event.target.files[0]
+    setExtFile(file || null)
+    setExtPreview(null)
+    setExtResultMsg('')
+    setExtErrorMsg('')
+    setExtReplaceMetadata(false)
+  }
+
+  const handleExtPreview = async () => {
+    if (!extFile) return
+    setExtPreviewing(true)
+    setExtErrorMsg('')
+    setExtResultMsg('')
+    try {
+      const res = await previewExternalImport(extFile)
+      setExtPreview(res)
+    } catch (err) {
+      console.error(err)
+      setExtErrorMsg(err.response?.data?.detail || 'Preview failed.')
+      setExtPreview(null)
+    } finally {
+      setExtPreviewing(false)
+    }
+  }
+
+  const handleExtImport = async () => {
+    if (!extFile || !extPreview) return
+    setExtImporting(true)
+    setExtErrorMsg('')
+    try {
+      const res = await importExternalLibrary(extFile, extReplaceMetadata)
+      setExtResultMsg(`Imported ${res.imported} new, updated ${res.updated}, skipped ${res.skipped}.`)
+      setExtPreview(null)
+      setExtFile(null)
+      onUploaded()
+    } catch (err) {
+      console.error(err)
+      setExtErrorMsg(err.response?.data?.detail || 'Import failed.')
+    } finally {
+      setExtImporting(false)
+    }
+  }
+
   return (
     <div className="view upload-view">
       <section className="card">
@@ -1707,6 +1777,53 @@ function UploadView({ onUploaded }) {
         )}
         {uploadMsg && <p className="success-msg">{uploadMsg}</p>}
         {loading && <p>Processing...</p>}
+      </section>
+
+      <section className="card">
+        <p className="eyebrow">Unified Library</p>
+        <h2>External library import</h2>
+        <p>Bring in games from Switch, PlayStation, Xbox, PC, or Retro. The CSV needs <code>title</code>, <code>platform</code>, and <code>source</code> columns; <code>external_id</code>, <code>genre</code>, <code>tags</code>, and <code>playtime_minutes</code> are optional.</p>
+        <p className="import-note">Imports are local to your GameButler. No platform account credentials are requested or stored.</p>
+        <input type="file" accept=".csv" onChange={handleExtFileChange} disabled={extPreviewing || extImporting} />
+        <button className="secondary-btn" onClick={handleExtPreview} disabled={!extFile || extPreviewing || extImporting}>
+          {extPreviewing ? 'Previewing...' : 'Preview import'}
+        </button>
+        {extPreview && (
+          <div className="import-preview-panel">
+            <p>{extPreview.total_rows} rows in {extPreview.filename}</p>
+            <div className="import-preview-stats">
+              <span className="badge secondary">New {extPreview.new}</span>
+              <span className="badge secondary">Updated {extPreview.updated}</span>
+              <span className="badge secondary">Skipped {extPreview.skipped}</span>
+              <span className="badge secondary">Duplicates {extPreview.duplicates}</span>
+              <span className="badge secondary">Invalid {extPreview.invalid.length}</span>
+            </div>
+            {extPreview.invalid.length > 0 && (
+              <ul className="import-invalid-list">
+                {extPreview.invalid.map((issue, i) => (
+                  // backend error strings already carry the "Row N:" prefix
+                  <li key={i}>{issue.error}</li>
+                ))}
+              </ul>
+            )}
+            <div className="filter-group checkbox">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={extReplaceMetadata}
+                  onChange={(e) => setExtReplaceMetadata(e.target.checked)}
+                />
+                Replace genre/tags/playtime from file for existing games
+              </label>
+              <p className="empty-hint">Personal notes, ratings, and status are never touched.</p>
+            </div>
+            <button className="primary-btn" onClick={handleExtImport} disabled={extImporting}>
+              {extImporting ? 'Importing...' : 'Confirm import'}
+            </button>
+          </div>
+        )}
+        {extErrorMsg && <div className="error-card">{extErrorMsg}</div>}
+        {extResultMsg && <p className="success-msg">{extResultMsg}</p>}
       </section>
 
       <section className="card">
