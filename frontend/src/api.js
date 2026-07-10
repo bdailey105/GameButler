@@ -84,6 +84,25 @@ export const previewLibraryUpload = async (file) => {
   return response.data;
 };
 
+export const previewExternalImport = async (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  const response = await api.post('/import/external/preview', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
+export const importExternalLibrary = async (file, replaceMetadata) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('replace_metadata', replaceMetadata ? 'true' : 'false');
+  const response = await api.post('/import/external', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return response.data;
+};
+
 export const autoTagLibrary = async () => {
   const response = await api.post('/games/auto-tag');
   return response.data;

@@ -41,6 +41,8 @@ class GameBase(SQLModel):
     attention_level: AttentionLevel = Field(default=AttentionLevel.UNSET)
     attention_source: Optional[str] = None  # "manual" | "auto" | None (never tagged)
     platform: str = Field(default="steam")
+    source: Optional[str] = None  # external library source, e.g. "nintendo_export"
+    external_id: Optional[str] = None  # id within that source
     queue_position: Optional[int] = None
     average_playtime: Optional[int] = None  # minutes to beat (main story), None = not yet looked up, 0 = HLTB has no data
     enrich_attempts: int = Field(default=0)
