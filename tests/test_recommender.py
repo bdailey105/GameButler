@@ -76,6 +76,22 @@ def test_recommend_excludes_completed_and_abandoned_string_values(sample_df):
     assert game is not None
     assert game['Name'] == 'Just Right'
 
+def test_recommend_excludes_paused_by_default(sample_df):
+    """Regression: paused games are for continuation planning, not the default pool."""
+    sample_df['status'] = [
+        GameStatus.PAUSED,
+        GameStatus.PAUSED,
+        GameStatus.PAUSED,
+        GameStatus.PAUSED,
+        GameStatus.LIBRARY,
+    ]
+    recommender = GameRecommender(sample_df)
+
+    game = recommender.recommend()
+
+    assert game is not None
+    assert game['Name'] == 'Just Right'
+
 def test_recommend_is_deterministic_and_prefers_up_next(sample_df):
     sample_df['status'] = [
         GameStatus.LIBRARY,

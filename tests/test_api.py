@@ -182,6 +182,45 @@ def test_queue_position_clears_when_removed(client):
     assert response.status_code == 200
     assert response.json()["queue_position"] is None
 
+def test_pausing_a_queued_game_logs_play_event_and_clears_queue_position(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Queued", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.commit()
+
+    response = client.put("/games/1", json={"status": "paused", "return_when": "the sequel comes out"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "paused"
+    assert data["queue_position"] is None
+    assert data["return_when"] == "the sequel comes out"
+
+    with Session(engine) as session:
+        game = session.get(Game, 1)
+        assert game.status == GameStatus.PAUSED
+        assert game.queue_position is None
+        assert game.return_when == "the sequel comes out"
+
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+        assert events[0].event_type == "status"
+        assert events[0].old_value == "up_next"
+        assert events[0].new_value == "paused"
+
+def test_resuming_a_paused_game_logs_play_event(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Paused Game", playtime_forever=0, status=GameStatus.PAUSED, return_when="later"))
+        session.commit()
+
+    response = client.put("/games/1", json={"status": "playing"})
+    assert response.status_code == 200
+    assert response.json()["status"] == "playing"
+
+    with Session(engine) as session:
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+        assert events[0].old_value == "paused"
+        assert events[0].new_value == "playing"
+
 def test_recommend_returns_score_and_reasons(client):
     df = pd.DataFrame({
         "AppID": [1, 2],
@@ -1133,6 +1172,94 @@ def test_get_game_detail_empty_journal(client):
 def test_get_game_detail_unknown_game(client):
     response = client.get("/games/999")
     assert response.status_code == 404
+
+def test_get_game_detail_remaining_estimate_null_when_no_average_playtime(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=100, average_playtime=None))
+        session.commit()
+
+    response = client.get("/games/1")
+    assert response.status_code == 200
+    assert response.json()["remaining_estimate"] is None
+
+def test_get_game_detail_remaining_estimate_beyond_typical(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=600, average_playtime=300))
+        session.commit()
+
+    response = client.get("/games/1")
+    assert response.status_code == 200
+    estimate = response.json()["remaining_estimate"]
+    assert estimate["minutes"] == 0
+    assert estimate["confidence"] == "beyond_typical"
+    assert estimate["label"] == "Playtime already exceeds the typical time to beat"
+
+def test_get_game_detail_remaining_estimate_rough_estimate(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=60, average_playtime=300))
+        session.commit()
+
+    response = client.get("/games/1")
+    assert response.status_code == 200
+    estimate = response.json()["remaining_estimate"]
+    assert estimate["minutes"] == 240
+    assert estimate["confidence"] == "rough_estimate"
+    assert "4h left" in estimate["label"]
+    assert "rough estimate" in estimate["label"]
+
+def test_continuation_ladder_buckets_and_order(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Playing Short", playtime_forever=240, average_playtime=280, status=GameStatus.PLAYING))
+        session.add(Game(id=2, name="Queued Session", playtime_forever=60, average_playtime=240, status=GameStatus.UP_NEXT))
+        session.add(Game(id=3, name="Paused Finish", playtime_forever=300, average_playtime=600, status=GameStatus.PAUSED, return_when="After the DLC drops"))
+        session.add(Game(id=4, name="Library Game", playtime_forever=0, average_playtime=100, status=GameStatus.LIBRARY))
+        session.add(Game(id=5, name="No Estimate Queued", playtime_forever=0, status=GameStatus.UP_NEXT))
+        session.commit()
+
+    response = client.get("/recommend/continuation")
+    assert response.status_code == 200
+    data = response.json()
+
+    short_ids = [game["id"] for game in data["short"]]
+    session_ids = [game["id"] for game in data["session"]]
+    finish_ids = [game["id"] for game in data["finish"]]
+
+    # 40 min left -> short; library game never appears anywhere
+    assert short_ids == [1]
+    assert all(4 not in ids for ids in (short_ids, session_ids, finish_ids))
+    # 180 min left queued game is a session candidate
+    assert 2 in session_ids
+    # finish: only games with an estimate; ranked by status priority then remaining
+    assert finish_ids[0] == 1
+    assert 3 in finish_ids
+    assert 5 not in finish_ids
+
+    # reasons carry status + return_when + estimate label
+    paused_entry = next(game for game in data["finish"] if game["id"] == 3)
+    assert "Paused — After the DLC drops" in paused_entry["reasons"]
+    assert any("rough estimate" in reason for reason in paused_entry["reasons"])
+    assert paused_entry["remaining_estimate"]["minutes"] == 300
+
+def test_continuation_ladder_empty_state(client):
+    response = client.get("/recommend/continuation")
+    assert response.status_code == 200
+    assert response.json() == {"short": [], "session": [], "finish": []}
+
+def test_plain_recommend_route_unaffected_by_continuation(client):
+    df = pd.DataFrame({
+        "AppID": [1],
+        "Name": ["Solo Game"],
+        "Playtime_Forever": [0],
+        "Average_Playtime": [120],
+        "Genre": ["Action"],
+        "Tags": ["Indie"],
+        "status": [GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.UNSET],
+    })
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend")
+    assert response.status_code == 200
+    assert response.json()["Name"] == "Solo Game"
 
 def test_get_game_detail_journal_chronological_order(client):
     with Session(engine) as session:

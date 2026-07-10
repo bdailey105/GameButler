@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -143,6 +143,8 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
   const [completedOn, setCompletedOn] = useState('')
   const [note, setNote] = useState('')
   const [sessionTags, setSessionTags] = useState([])
+  const [returnWhen, setReturnWhen] = useState('')
+  const [pauseJustClicked, setPauseJustClicked] = useState(false)
   const [saveState, setSaveState] = useState('idle') // idle | saving | saved | error
   const [saveError, setSaveError] = useState('')
   const sessionTagOptions = [
@@ -171,6 +173,8 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
         setCompletedOn(data.completed_on || '')
         setNote(data.current_note || '')
         setSessionTags(data.session_tags ? data.session_tags.split(';').filter(Boolean) : [])
+        setReturnWhen(data.return_when || '')
+        setPauseJustClicked(false)
         setSaveState('idle')
       })
       .catch(err => {
@@ -221,6 +225,7 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
   }, [handleClose])
 
   const handleMove = async (status) => {
+    if (status === 'paused') setPauseJustClicked(true)
     try {
       const updated = await updateGame(appId, { status })
       setGame(updated)
@@ -244,6 +249,7 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
         completed_on: completedOn || null,
         current_note: note || null,
         session_tags: sessionTags.length > 0 ? sessionTags.join(';') : null,
+        return_when: returnWhen || null,
       })
       setGame(updated)
       setSaveState('saved')
@@ -282,10 +288,12 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
 
   const status = game?.status || 'library'
   const statusActions = [
-    { label: '▶ Play now', status: 'playing', className: 'primary' },
+    { label: status === 'paused' ? '▶ Resume' : '▶ Play now', status: 'playing', className: 'primary' },
     { label: '+ Up Next', status: 'up_next', className: 'secondary' },
-    { label: '↩ Back to Library', status: 'library', className: 'secondary' }
+    { label: '↩ Back to Library', status: 'library', className: 'secondary' },
+    { label: '⏸ Pause', status: 'paused', className: 'secondary' }
   ].filter(action => action.status !== status)
+  const showReturnWhen = status === 'paused' || pauseJustClicked
 
   return (
     <>
@@ -330,6 +338,18 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
                     {action.label}
                   </button>
                 ))}
+              </div>
+            )}
+
+            {showReturnWhen && (
+              <div className="drawer-field">
+                <label>Return when…</label>
+                <input
+                  type="text"
+                  value={returnWhen}
+                  onChange={(e) => setReturnWhen(e.target.value)}
+                  placeholder="e.g. after finishing the current chapter"
+                />
               </div>
             )}
 
@@ -411,6 +431,7 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
 }
 
 function ConciergeView({ loading, error, getRec, recommendation }) {
+  const [butlerMode, setButlerMode] = useState('fresh')
   const [genre, setGenre] = useState('')
   const [tag, setTag] = useState('')
   const [length, setLength] = useState('')
@@ -528,6 +549,27 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
 
   return (
     <div className="view concierge-view">
+      <div className="butler-mode-toggle" role="group" aria-label="Butler mode">
+        <button
+          type="button"
+          className={butlerMode === 'fresh' ? 'active' : ''}
+          aria-pressed={butlerMode === 'fresh'}
+          onClick={() => setButlerMode('fresh')}
+        >
+          Fresh pick
+        </button>
+        <button
+          type="button"
+          className={butlerMode === 'continue' ? 'active' : ''}
+          aria-pressed={butlerMode === 'continue'}
+          onClick={() => setButlerMode('continue')}
+        >
+          Continue something
+        </button>
+      </div>
+
+      {butlerMode === 'fresh' && (
+      <>
       <section className="card filter-section">
         <p className="eyebrow">Butler</p>
         <h2>What kind of session are you after?</h2>
@@ -750,6 +792,116 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
           )}
         </section>
       )}
+      </>
+      )}
+
+      {butlerMode === 'continue' && <ContinuationLadder />}
+    </div>
+  )
+}
+
+function formatStatusLabel(status) {
+  return (status || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function LadderCard({ item, played, onPlay }) {
+  const estimate = item.remaining_estimate
+  const estimateLabel = estimate?.label
+    ? (estimate.label.startsWith('~') ? estimate.label : `~${estimate.label}`)
+    : null
+
+  return (
+    <div className="ladder-card">
+      {item.header_image ? (
+        <img className="ladder-card-art" src={item.header_image} alt="" loading="lazy" />
+      ) : (
+        <div className="ladder-card-placeholder">{item.name?.slice(0, 1) || '?'}</div>
+      )}
+      <div className="ladder-card-info">
+        <span className="ladder-card-name">{item.name}</span>
+        <span className="badge secondary">{formatStatusLabel(item.status)}</span>
+        {item.reasons?.length > 0 && (
+          <ul className="ladder-reasons">
+            {/* the estimate label renders on its own line below — don't repeat it */}
+            {item.reasons.filter(reason => reason !== estimate?.label).map(reason => <li key={reason}>{reason}</li>)}
+          </ul>
+        )}
+        {estimateLabel && <span className="ladder-estimate">{estimateLabel}</span>}
+      </div>
+      <div className="ladder-card-actions">
+        {played ? (
+          <span className="rec-acted">▶ Playing now</span>
+        ) : (
+          <button className="action-btn" title="Play now" onClick={() => onPlay(item.id)}>▶ Play now</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ContinuationLadder() {
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [actedOn, setActedOn] = useState({})
+
+  useEffect(() => {
+    let cancelled = false
+    fetchContinuation()
+      .then(res => { if (!cancelled) setData(res) })
+      .catch(err => {
+        console.error('Failed to load continuation options:', err)
+        if (!cancelled) setError('Failed to load continuation options.')
+      })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  const handlePlay = async (gameId) => {
+    try {
+      await updateGame(gameId, { status: 'playing' })
+      setActedOn(prev => ({ ...prev, [gameId]: true }))
+    } catch (err) {
+      console.error('Failed to update game:', err)
+    }
+  }
+
+  const groups = [
+    { key: 'short', title: 'Quick dip (15–30 min)', items: data?.short || [] },
+    { key: 'session', title: 'One session', items: data?.session || [] },
+    { key: 'finish', title: 'Finish this week', items: data?.finish || [] }
+  ]
+  const totalItems = groups.reduce((sum, group) => sum + group.items.length, 0)
+
+  return (
+    <div className="continuation-ladder">
+      {error && <div className="error-card">{error}</div>}
+      {loading && <LoadingState label="Butler is checking what's in progress..." />}
+      {!loading && !error && totalItems === 0 && (
+        <EmptyState
+          title="Nothing to continue yet"
+          message="No started or queued games with trustworthy estimates yet."
+        />
+      )}
+      {!loading && !error && totalItems > 0 && groups.map(group => (
+        <section className="ladder-group" key={group.key}>
+          <h3>{group.title}</h3>
+          {group.items.length === 0 ? (
+            <p className="empty-hint">Nothing safe to suggest here yet.</p>
+          ) : (
+            <div className="game-list">
+              {group.items.map(item => (
+                <LadderCard
+                  key={item.id}
+                  item={item}
+                  played={!!actedOn[item.id]}
+                  onPlay={handlePlay}
+                />
+              ))}
+            </div>
+          )}
+        </section>
+      ))}
     </div>
   )
 }
@@ -1127,6 +1279,7 @@ function BacklogView({ onMove, onAttentionChange, onOpenDetail }) {
     { key: 'library', title: 'Backlog' },
     { key: 'up_next', title: 'Up Next' },
     { key: 'playing', title: 'Playing' },
+    { key: 'paused', title: 'Paused' },
     { key: 'completed', title: 'Completed' }
   ]
 

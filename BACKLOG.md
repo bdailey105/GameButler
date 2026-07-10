@@ -175,9 +175,9 @@
 
 ## Epic 28: Continuation & Finish Ladder
 **Goal:** Make progress on started games approachable without overstating metadata-derived completion estimates.
-- [ ] **Story 28.1: Paused State & Return Context** — Add a paused status, logged transitions, and an optional “return when…” note.
-- [ ] **Story 28.2: Remaining-Time Confidence** — Return qualified remaining-duration estimates only when time-to-beat and playtime support one.
-- [ ] **Story 28.3: Continuation Ladder** — Surface ranked options for a short continuation, one session, or a likely finish this week.
+- [x] **Story 28.1: Paused State & Return Context** — `paused` status (PlayEvent-logged, excluded from default recommendations, Paused backlog column, drawer Pause/Resume); `return_when` note (migration 009).
+- [x] **Story 28.2: Remaining-Time Confidence** — `estimate_remaining`: unavailable when HLTB missing/zero, `beyond_typical` when playtime exceeds it, else `rough_estimate` labeled "not actual progress"; exposed on GET /games/{id}.
+- [x] **Story 28.3: Continuation Ladder** — `GET /recommend/continuation` ranks playing → queued → paused into Quick dip / One session / Finish this week; Butler "Continue something" mode renders the ladder with approximate-labeled estimates, per-group empty states, and one-click Play now.
 
 ## Epic 29: Bulk Library Curation
 **Goal:** Curate a large library in intentional batches rather than one game card at a time.
