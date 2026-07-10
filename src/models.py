@@ -87,6 +87,17 @@ class GameUpdate(SQLModel):
 class QueueReorder(SQLModel):
     app_ids: list[int]
 
+class BulkGameUpdate(SQLModel):
+    app_ids: list[int]
+    status: Optional[GameStatus] = None
+    attention_level: Optional[AttentionLevel] = None
+    session_tags: Optional[str] = None
+
+    @field_validator("session_tags")
+    @classmethod
+    def _check_session_tags(cls, value: Optional[str]) -> Optional[str]:
+        return _validate_session_tags(value)
+
 class EnrichmentJob(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     status: str = "running"

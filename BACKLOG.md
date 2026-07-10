@@ -181,9 +181,9 @@
 
 ## Epic 29: Bulk Library Curation
 **Goal:** Curate a large library in intentional batches rather than one game card at a time.
-- [ ] **Story 29.1: Atomic Bulk Updates** — Apply validated status, attention, and session-suitability changes to selected games in one transaction.
-- [ ] **Story 29.2: Multi-Select Library UI** — Add keyboard-accessible selection, a bulk-action bar, confirmations, and clear affected-count feedback.
-- [ ] **Story 29.3: Curation Views & Saved Filters** — Add neglected/uncategorized/deferred presets and local saved filter combinations.
+- [x] **Story 29.1: Atomic Bulk Updates** — `PUT /games/bulk`: validate-all-then-commit (missing id → 404, zero rows touched); queue positions appended in given order, attention_source + PlayEvents mirror the single-game PUT; 400 on empty/duplicate ids or no fields.
+- [x] **Story 29.2: Multi-Select Library UI** — Select mode with real checkboxes (keyboard-accessible), "N selected" indicator, sticky bulk bar (status/attention/session-tags), confirm dialog with affected count, "Updated N games" toast; selection cleared on filter changes and after apply.
+- [x] **Story 29.3: Curation Views & Saved Filters** — Preset chips (Uncategorized / Never played / Started-not-active / Deferred via new `played` param), live "N games" count, localStorage saved filters with name validation and ✕ delete.
 
 ## Epic 30: Unified Library Import
 **Goal:** Unify non-Steam ownership with safe local imports before attempting account-linking integrations.

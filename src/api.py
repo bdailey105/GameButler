@@ -17,7 +17,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -252,6 +252,7 @@ async def list_games(
     attention_level: Optional[AttentionLevel] = None,
     search: Optional[str] = None,
     platform: Optional[str] = None,
+    played: Optional[bool] = None,
     session: Session = Depends(get_session)
 ):
     query = select(Game)
@@ -263,7 +264,9 @@ async def list_games(
         query = query.where(col(Game.name).contains(search))
     if platform:
         query = query.where(Game.platform == platform)
-        
+    if played is not None:
+        query = query.where(Game.playtime_forever > 0 if played else Game.playtime_forever == 0)
+
     results = session.exec(query).all()
     if status == GameStatus.UP_NEXT:
         results = sorted(results, key=lambda game: (game.queue_position is None, game.queue_position or 0, game.name.lower()))
@@ -345,6 +348,74 @@ async def reorder_queue(
     session.commit()
     sync_recommender_with_db()
     return sorted(queued_games, key=lambda game: game.queue_position or 0)
+
+@app.put("/games/bulk")
+async def bulk_update_games(
+    payload: BulkGameUpdate,
+    session: Session = Depends(get_session),
+):
+    if not payload.app_ids:
+        raise HTTPException(status_code=400, detail="app_ids cannot be empty")
+    if len(payload.app_ids) != len(set(payload.app_ids)):
+        raise HTTPException(status_code=400, detail="app_ids contains duplicates")
+
+    update_data = payload.model_dump(exclude_unset=True, exclude={"app_ids"})
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No updatable field provided")
+
+    games_by_id = {
+        game.id: game
+        for game in session.exec(select(Game).where(col(Game.id).in_(payload.app_ids))).all()
+    }
+    missing = [app_id for app_id in payload.app_ids if app_id not in games_by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Games not found: {missing}")
+
+    new_status = update_data.get("status")
+    attention_provided = "attention_level" in update_data
+    new_attention = update_data.get("attention_level")
+    session_tags_provided = "session_tags" in update_data
+    new_session_tags = update_data.get("session_tags")
+
+    next_queue_position = None
+    if new_status == GameStatus.UP_NEXT:
+        positions = session.exec(
+            select(Game.queue_position).where(Game.status == GameStatus.UP_NEXT)
+        ).all()
+        next_queue_position = max([position or 0 for position in positions], default=0) + 1
+
+    updated_count = 0
+    for app_id in payload.app_ids:
+        game = games_by_id[app_id]
+        modified = False
+
+        if new_status is not None and new_status != game.status:
+            old_status = game.status
+            game.status = new_status
+            if new_status == GameStatus.UP_NEXT:
+                game.queue_position = next_queue_position
+                next_queue_position += 1
+            else:
+                game.queue_position = None
+            session.add(PlayEvent(game_id=game.id, event_type="status", old_value=old_status.value, new_value=new_status.value))
+            modified = True
+
+        if attention_provided and new_attention != game.attention_level:
+            game.attention_level = new_attention
+            game.attention_source = None if new_attention == AttentionLevel.UNSET else "manual"
+            modified = True
+
+        if session_tags_provided and new_session_tags != game.session_tags:
+            game.session_tags = new_session_tags
+            modified = True
+
+        if modified:
+            session.add(game)
+            updated_count += 1
+
+    session.commit()
+    sync_recommender_with_db()
+    return {"updated": updated_count}
 
 @app.put("/games/{app_id}", response_model=Game)
 async def update_game(

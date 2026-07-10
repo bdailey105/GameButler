@@ -498,6 +498,12 @@ select:focus-visible {
   color: var(--text-primary);
 }
 
+.secondary-btn.active {
+  border-color: var(--brand-primary);
+  background: var(--brand-tint);
+  color: var(--brand-light);
+}
+
 .result-card {
   display: grid;
   gap: var(--space-3);
@@ -668,6 +674,63 @@ select:focus-visible {
   min-width: 170px;
 }
 
+.selected-count,
+.library-count {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.saved-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.saved-filter-chip .chip-remove {
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  width: 1.4rem;
+  height: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+.saved-filter-chip .chip-remove:hover {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.bulk-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-nav);
+  border-top: 1px solid var(--border-default);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.bulk-bar .bulk-count {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
 .game-card {
   position: relative;
   display: flex;
@@ -694,6 +757,18 @@ select:focus-visible {
 .game-card.status-paused::before { background: var(--status-paused); }
 .game-card.attention-casual { border-left: 3px solid var(--status-casual); }
 .game-card.attention-focused { border-left: 3px solid var(--status-playing); }
+.game-card.selected { border-color: var(--brand-primary); }
+
+.card-select {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 1;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--brand-primary);
+  cursor: pointer;
+}
 
 .game-card:hover {
   transform: translateY(-2px);

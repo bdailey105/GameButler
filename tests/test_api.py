@@ -61,6 +61,27 @@ def test_list_games(client):
     assert len(data) == 1
     assert data[0]["name"] == "Game B"
 
+def test_list_games_filters_by_played(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Unplayed", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Played", playtime_forever=120, status=GameStatus.LIBRARY))
+        session.add(Game(id=3, name="Played and Queued", playtime_forever=50, status=GameStatus.UP_NEXT))
+        session.commit()
+
+    response = client.get("/games?played=true")
+    assert response.status_code == 200
+    assert {game["name"] for game in response.json()} == {"Played", "Played and Queued"}
+
+    response = client.get("/games?played=false")
+    assert response.status_code == 200
+    assert {game["name"] for game in response.json()} == {"Unplayed"}
+
+    response = client.get("/games?played=true&status=up_next")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "Played and Queued"
+
 def test_games_include_rich_metadata(client):
     with Session(engine) as session:
         session.add(Game(
@@ -219,6 +240,147 @@ def test_resuming_a_paused_game_logs_play_event(client):
         events = session.exec(select(PlayEvent)).all()
         assert len(events) == 1
         assert events[0].old_value == "paused"
+        assert events[0].new_value == "playing"
+
+def test_bulk_update_happy_path_multi_field(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="B", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=3, name="C", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={
+        "app_ids": [1, 2, 3],
+        "status": "up_next",
+        "attention_level": "focused",
+    })
+    assert response.status_code == 200
+    assert response.json() == {"updated": 3}
+
+    with Session(engine) as session:
+        games = {game.id: game for game in session.exec(select(Game)).all()}
+        for app_id in (1, 2, 3):
+            assert games[app_id].status == GameStatus.UP_NEXT
+            assert games[app_id].attention_level == AttentionLevel.FOCUSED
+            assert games[app_id].attention_source == "manual"
+
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 3
+        for event in events:
+            assert event.event_type == "status"
+            assert event.old_value == "library"
+            assert event.new_value == "up_next"
+
+def test_bulk_update_rejects_empty_app_ids(client):
+    response = client.put("/games/bulk", json={"app_ids": [], "status": "up_next"})
+    assert response.status_code == 400
+
+def test_bulk_update_rejects_duplicate_app_ids(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={"app_ids": [1, 1], "status": "up_next"})
+    assert response.status_code == 400
+
+def test_bulk_update_rejects_no_updatable_fields(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={"app_ids": [1]})
+    assert response.status_code == 400
+
+def test_bulk_update_missing_id_returns_404_and_makes_no_changes(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="B", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={
+        "app_ids": [1, 2, 999],
+        "status": "up_next",
+    })
+    assert response.status_code == 404
+    assert "999" in response.json()["detail"]
+
+    with Session(engine) as session:
+        games = {game.id: game for game in session.exec(select(Game)).all()}
+        assert games[1].status == GameStatus.LIBRARY
+        assert games[2].status == GameStatus.LIBRARY
+        assert session.exec(select(PlayEvent)).all() == []
+
+def test_bulk_update_into_up_next_appends_after_existing_queue_in_given_order(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Already Queued", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.add(Game(id=2, name="B", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=3, name="C", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={"app_ids": [3, 2], "status": "up_next"})
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2}
+
+    with Session(engine) as session:
+        games = {game.id: game for game in session.exec(select(Game)).all()}
+        assert games[1].queue_position == 1
+        assert games[3].queue_position == 2
+        assert games[2].queue_position == 3
+
+def test_bulk_update_out_of_up_next_clears_queue_position(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.add(Game(id=2, name="B", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=2))
+        session.commit()
+
+    response = client.put("/games/bulk", json={"app_ids": [1, 2], "status": "library"})
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2}
+
+    with Session(engine) as session:
+        games = {game.id: game for game in session.exec(select(Game)).all()}
+        assert games[1].queue_position is None
+        assert games[2].queue_position is None
+
+def test_bulk_update_session_tags_set_and_invalid_vocabulary(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="A", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="B", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={
+        "app_ids": [1, 2],
+        "session_tags": "burst_friendly;podcast_friendly",
+    })
+    assert response.status_code == 200
+    assert response.json() == {"updated": 2}
+
+    with Session(engine) as session:
+        games = {game.id: game for game in session.exec(select(Game)).all()}
+        assert games[1].session_tags == "burst_friendly;podcast_friendly"
+        assert games[2].session_tags == "burst_friendly;podcast_friendly"
+
+    response = client.put("/games/bulk", json={
+        "app_ids": [1, 2],
+        "session_tags": "burst_friendly;not_a_real_tag",
+    })
+    assert response.status_code == 422
+
+def test_bulk_update_skips_games_already_in_target_status(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Already Playing", playtime_forever=0, status=GameStatus.PLAYING))
+        session.add(Game(id=2, name="Still Library", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.put("/games/bulk", json={"app_ids": [1, 2], "status": "playing"})
+    assert response.status_code == 200
+    assert response.json() == {"updated": 1}
+
+    with Session(engine) as session:
+        events = session.exec(select(PlayEvent)).all()
+        assert len(events) == 1
+        assert events[0].game_id == 2
+        assert events[0].old_value == "library"
         assert events[0].new_value == "playing"
 
 def test_recommend_returns_score_and_reasons(client):
