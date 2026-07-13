@@ -133,8 +133,8 @@ This sequence uses the existing rich production metadata as a foundation, then a
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
 | E31 | Resume Me | Done | A home-screen continuation card joins return context, next milestone, approximate remaining time, and a launch action. |
-| E32 | Gaming Context Profiles | In progress | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
-| E33 | Post-Session Outcomes | Backlog | Optional structured reflection on whether a recommendation fit the actual session. |
+| E32 | Gaming Context Profiles | Done | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
+| E33 | Post-Session Outcomes | In progress | Optional structured reflection on whether a recommendation fit the actual session. |
 | E34 | Backlog Archaeology | Backlog | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
 | E35 | Curated Rotations | Backlog | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
 

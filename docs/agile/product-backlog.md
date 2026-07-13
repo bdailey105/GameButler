@@ -930,13 +930,13 @@ Git commits `6a4f5b1` through `a284f1b` implement E25–E30 and include correspo
 
 ## E32 — Gaming Context Profiles
 
-**Status:** In progress
+**Status:** Done (2026-07-13: ContextProfile CRUD, profile-aware /recommend with visible influence, planner profile chips; 193 backend tests, lint+build clean, CRUD+recommend smoke-tested)
 
 Persist reusable, user-controlled profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, or 30-minute sessions. Profiles apply explainable filtering/bonuses; they do not infer hardware or preferences silently.
 
 ## E33 — Post-Session Outcomes
 
-**Status:** Backlog
+**Status:** In progress
 
 After a chosen session, offer an optional one-question reflection: whether the game fit the intended mood, time, and setting. The signal supplements—not replaces—existing explicit feedback.
 
