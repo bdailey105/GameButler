@@ -502,7 +502,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to record my own notes, rating, and play milestones for a game, **so that** I can resume it without reconstructing context from memory.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** None
 
@@ -523,7 +523,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -
 
 **As a** GameButler client, **I want** read/write endpoints for personal game context and journal entries, **so that** the frontend can show a complete game history without client-side data hacks.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E25-S1
 
@@ -544,7 +544,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py -q
 
 **As a** GameButler user, **I want** a detail drawer from any game card, **so that** I can view metadata, play history, and personal notes without losing my place in the library.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E25-S2, E22
 
@@ -569,7 +569,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to record why I accepted or rejected a recommendation, **so that** future picks reflect my actual preferences rather than only static metadata.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E14
 
@@ -590,7 +590,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -
 
 **As a** GameButler user, **I want** to give quick feedback directly on Butler picks, **so that** I can reject an unhelpful answer in one step.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E26-S1
 
@@ -611,7 +611,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** recommendation explanations to show how my feedback affected a pick, **so that** preference learning remains trustworthy and under my control.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E26-S1
 
@@ -637,7 +637,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -
 
 **As a** GameButler user, **I want** to describe tonight's available time, energy, and setting, **so that** Butler can distinguish a short game from a game that fits this particular session.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E14, E15
 
@@ -659,7 +659,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -
 
 **As a** GameButler user, **I want** a one-screen session planner, **so that** I can ask for a useful recommendation without configuring raw metadata filters.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E27-S1
 
@@ -680,7 +680,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to mark a game as good for bursts, controller-only, or podcast-friendly, **so that** personal experience can correct generic metadata.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E25-S1, E27-S1
 
@@ -705,7 +705,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py t
 
 **As a** GameButler user, **I want** to pause a game with an optional return note, **so that** I can defer it without confusing it with an abandoned or never-started game.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E25-S1
 
@@ -726,7 +726,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py t
 
 **As a** GameButler user, **I want** a clearly qualified estimate of what remains for a started game, **so that** I can choose between a continuation and a fresh start responsibly.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E28-S1, E19
 
@@ -747,7 +747,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_recommender.py -
 
 **As a** GameButler user, **I want** ranked continuation options such as “15 minutes,” “one session,” and “this week,” **so that** progress feels approachable rather than like another backlog obligation.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E27-S1, E28-S2
 
@@ -773,7 +773,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to update selected games together, **so that** I can apply consistent backlog and attention decisions efficiently.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E21
 
@@ -794,7 +794,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -
 
 **As a** GameButler user, **I want** to select and update multiple library games from the list view, **so that** I can clean up a large backlog quickly.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E29-S1
 
@@ -815,7 +815,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** focused views for neglected or uncategorized games, **so that** I can make small, intentional cleanup passes.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E29-S2
 
@@ -841,7 +841,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** imported non-Steam games to retain their platform and source identity, **so that** repeated imports update the right record instead of creating duplicates.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** AFK
 **Blocked by:** E16, E21
 
@@ -862,7 +862,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -
 
 **As a** GameButler user, **I want** to preview a non-Steam library import before it writes, **so that** I can safely bring in Switch, PlayStation, Xbox, retro, or launcher-exported games.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** HITL
 **Blocked by:** E30-S1, E20
 
@@ -883,7 +883,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_data_loader.py tests/test_api.py -
 
 **As a** GameButler user, **I want** a guided import flow and source filters, **so that** games from every platform remain understandable in one concierge library.
 
-**Status:** Implemented — integration verification pending
+**Status:** Done (2026-07-13 integration gate: rebase onto origin clean, 175 backend tests pass, frontend lint+build pass)
 **Type:** HITL
 **Blocked by:** E30-S2
 
@@ -902,13 +902,13 @@ cd frontend && npm run lint && npm run build
 
 ## Reconciliation — E25 through E30
 
-**Status:** Implemented on `Codex-update`; integration verification pending.
+**Status:** Done. Integration gate passed 2026-07-13: rebased onto origin/Codex-update (picked up auto-enrich fix 4ccbaab), full backend suite 175 passed, frontend eslint clean, vite build clean.
 
 Git commits `6a4f5b1` through `a284f1b` implement E25–E30 and include corresponding backend/frontend test changes. The branch is ahead of its remote and behind by one commit, so these stories must not be marked Done until their integration/rebase decision is made and the current backend, frontend, and Docker/LAN quality gates are recorded.
 
 ## E31 — Resume Me
 
-**Status:** Ready after E25–E30 integration gate
+**Status:** In progress
 
 **Goal:** Put the best continuation decision on the home surface so resuming a game takes less effort than browsing the library.
 

@@ -67,7 +67,7 @@ Success signal: GameButler can say why a game is a good pick for tonight.
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E25 | Game Detail & Play Journal | Implemented — integration verification pending | Current `Codex-update` branch adds private notes, ratings, milestones, and detail UI; confirm after branch integration. |
+| E25 | Game Detail & Play Journal | Done | Current `Codex-update` branch adds private notes, ratings, milestones, and detail UI; confirm after branch integration. |
 
 Success signal: Bryan can resume a game weeks later knowing where he left off and why he intended to return.
 
@@ -77,8 +77,8 @@ Success signal: Bryan can resume a game weeks later knowing where he left off an
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E26 | Concierge Feedback & Preference Learning | Implemented — integration verification pending | Current branch records transparent accept/reject/defer feedback and applies explainable scoring adjustments. |
-| E27 | Tonight Planner | Implemented — integration verification pending | Current branch uses time, energy, and play-setting context for recommendations. |
+| E26 | Concierge Feedback & Preference Learning | Done | Current branch records transparent accept/reject/defer feedback and applies explainable scoring adjustments. |
+| E27 | Tonight Planner | Done | Current branch uses time, energy, and play-setting context for recommendations. |
 
 Success signal: Bryan can ask what fits tonight and see a transparent explanation grounded in both current context and prior choices.
 
@@ -88,8 +88,8 @@ Success signal: Bryan can ask what fits tonight and see a transparent explanatio
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E28 | Continuation & Finish Ladder | Implemented — integration verification pending | Current branch adds paused/return context and qualified continuation or finish guidance. |
-| E29 | Bulk Library Curation | Implemented — integration verification pending | Current branch adds bulk library actions and batch curation workflows. |
+| E28 | Continuation & Finish Ladder | Done | Current branch adds paused/return context and qualified continuation or finish guidance. |
+| E29 | Bulk Library Curation | Done | Current branch adds bulk library actions and batch curation workflows. |
 
 Success signal: Bryan can make a small, intentional curation pass and choose a meaningful continuation without turning the backlog into an obligation.
 
@@ -99,7 +99,7 @@ Success signal: Bryan can make a small, intentional curation pass and choose a m
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E30 | Unified Library Import | Implemented — integration verification pending | Current branch adds preview-first, source-aware external-library import without account credentials. |
+| E30 | Unified Library Import | Done | Current branch adds preview-first, source-aware external-library import without account credentials. |
 
 Success signal: GameButler can recommend across the games Bryan owns without storing third-party account credentials.
 
@@ -132,7 +132,7 @@ This sequence uses the existing rich production metadata as a foundation, then a
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E31 | Resume Me | Ready after E25–E30 integration gate | A home-screen continuation card joins return context, next milestone, approximate remaining time, and a launch action. |
+| E31 | Resume Me | In progress | A home-screen continuation card joins return context, next milestone, approximate remaining time, and a launch action. |
 | E32 | Gaming Context Profiles | Backlog | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
 | E33 | Post-Session Outcomes | Backlog | Optional structured reflection on whether a recommendation fit the actual session. |
 | E34 | Backlog Archaeology | Backlog | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
