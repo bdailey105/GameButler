@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -918,11 +918,56 @@ function ContinuationLadder() {
   )
 }
 
+function ResumeCard({ candidate, onOpenDetail }) {
+  if (!candidate) return null
+
+  return (
+    <section className="card resume-card">
+      <div className="resume-card-media">
+        {candidate.header_image ? (
+          <img className="resume-card-art" src={candidate.header_image} alt="" loading="lazy" />
+        ) : (
+          <div className="resume-card-placeholder">{candidate.name?.slice(0, 1) || '?'}</div>
+        )}
+      </div>
+      <div className="resume-card-body">
+        <span className="eyebrow">Resume</span>
+        <button className="resume-card-name" onClick={() => onOpenDetail(candidate.id)}>{candidate.name}</button>
+        {candidate.return_when && (
+          <p className="resume-card-line">Return when: {candidate.return_when}</p>
+        )}
+        {candidate.current_note && (
+          <p className="resume-card-line">Where you left off: {candidate.current_note}</p>
+        )}
+        {candidate.remaining_estimate?.label && (
+          <p className="resume-card-estimate">{candidate.remaining_estimate.label}</p>
+        )}
+        {candidate.reasons?.length > 0 && (
+          <div className="resume-card-reasons">
+            {candidate.reasons.map(reason => (
+              <span className="badge secondary" key={reason}>{reason}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="resume-card-actions">
+        {candidate.launch_url ? (
+          <a className="primary-btn resume-card-launch" href={candidate.launch_url}>Launch</a>
+        ) : (
+          <span className="resume-card-launch-disabled">No launcher link</span>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
   const [activity, setActivity] = useState(null)
+  const [resumeCandidate, setResumeCandidate] = useState(null)
 
   useEffect(() => {
     fetchActivity().then(setActivity).catch(() => {})
+    fetchResume().then(res => setResumeCandidate(res?.candidate ?? null)).catch(() => {})
   }, [])
 
   const playing = games.filter(g => g.status === 'playing')
@@ -932,6 +977,7 @@ function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
 
   return (
     <div className="view dashboard-view">
+      <ResumeCard candidate={resumeCandidate} onOpenDetail={onOpenDetail} />
       <div className="dashboard-grid">
         <section className="dashboard-column">
           <h2>Currently Playing</h2>

@@ -291,6 +291,104 @@ h2 {
   font-size: 0.78rem;
 }
 
+.resume-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.resume-card-media {
+  flex-shrink: 0;
+}
+
+.resume-card-art,
+.resume-card-placeholder {
+  width: 160px;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+}
+
+.resume-card-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  font-weight: 850;
+  font-size: 1.5rem;
+}
+
+.resume-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.resume-card-body .eyebrow {
+  margin: 0;
+}
+
+.resume-card-name {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.resume-card-name:hover {
+  color: var(--brand-light);
+  text-decoration: underline;
+}
+
+.resume-card-line {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.resume-card-estimate {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.8rem;
+}
+
+.resume-card-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.resume-card-actions {
+  flex-shrink: 0;
+}
+
+.resume-card-launch {
+  display: inline-block;
+  width: auto;
+  text-decoration: none;
+  text-align: center;
+  padding: 0.75rem 1.5rem;
+}
+
+.resume-card-launch-disabled {
+  display: inline-block;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1.5rem;
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: not-allowed;
+}
+
 .filter-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1533,6 +1631,25 @@ select:focus-visible {
   }
 
   .drawer {
+    width: 100%;
+  }
+
+  .resume-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .resume-card-art,
+  .resume-card-placeholder {
+    width: 100%;
+  }
+
+  .resume-card-actions {
+    display: flex;
+  }
+
+  .resume-card-launch,
+  .resume-card-launch-disabled {
     width: 100%;
   }
 }

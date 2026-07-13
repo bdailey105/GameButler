@@ -66,6 +66,11 @@ export const fetchContinuation = async () => {
   return response.data;
 };
 
+export const fetchResume = async () => {
+  const response = await api.get('/recommend/resume');
+  return response.data;
+};
+
 export const uploadLibrary = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
