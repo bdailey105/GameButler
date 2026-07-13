@@ -17,7 +17,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library, load_external_library, EXTERNAL_VALID_PLATFORMS
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -1283,6 +1283,64 @@ async def clear_recommendation_decisions(session: Session = Depends(get_session)
     sync_recommender_with_db()
     return {"cleared": count}
 
+@app.get("/profiles", response_model=List[ContextProfile])
+async def list_profiles(session: Session = Depends(get_session)):
+    return session.exec(select(ContextProfile).order_by(ContextProfile.name)).all()
+
+@app.post("/profiles", response_model=ContextProfile)
+async def create_profile(payload: ContextProfileCreate, session: Session = Depends(get_session)):
+    duplicate = session.exec(
+        select(ContextProfile).where(col(ContextProfile.name).ilike(payload.name.strip()))
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"Profile '{payload.name}' already exists")
+
+    profile = ContextProfile(**payload.model_dump())
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    return profile
+
+@app.put("/profiles/{profile_id}", response_model=ContextProfile)
+async def update_profile(
+    profile_id: int,
+    payload: ContextProfileUpdate,
+    session: Session = Depends(get_session),
+):
+    profile = session.get(ContextProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    new_name = update_data.get("name")
+    if new_name is not None:
+        duplicate = session.exec(
+            select(ContextProfile).where(
+                col(ContextProfile.name).ilike(new_name.strip()),
+                ContextProfile.id != profile_id,
+            )
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=409, detail=f"Profile '{new_name}' already exists")
+
+    for key, value in update_data.items():
+        setattr(profile, key, value)
+
+    session.add(profile)
+    session.commit()
+    session.refresh(profile)
+    return profile
+
+@app.delete("/profiles/{profile_id}")
+async def delete_profile(profile_id: int, session: Session = Depends(get_session)):
+    profile = session.get(ContextProfile, profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    session.delete(profile)
+    session.commit()
+    return {"ok": True}
+
 CONTINUATION_STATUS_PRIORITY = {
     GameStatus.PLAYING: 0,
     GameStatus.UP_NEXT: 1,
@@ -1498,17 +1556,39 @@ async def recommend_resume(session: Session = Depends(get_session)):
 async def recommend_game(
     genre: Optional[str] = None,
     tag: Optional[str] = None,
-    unplayed_only: bool = False,
+    unplayed_only: Optional[bool] = None,
     length: Optional[str] = Query(None, pattern="^(short|medium|long)$"),
     attention_level: Optional[str] = Query(None, pattern="^(casual|focused)$"),
     mood: Optional[str] = Query(None, pattern="^(zone_out|story_night|short_session|finish_something|surprise_me)$"),
     available_minutes: Optional[int] = Query(None, ge=5, le=600),
     energy: Optional[str] = Query(None, pattern="^(low|medium|high)$"),
     context: Optional[str] = Query(None, pattern="^(desk|couch|handheld|podcast)$"),
-    count: int = Query(1, ge=1, le=5)
+    count: int = Query(1, ge=1, le=5),
+    profile_id: Optional[int] = None,
+    session: Session = Depends(get_session),
 ):
     if recommender is None or recommender.df.empty:
         raise HTTPException(status_code=404, detail="No game library loaded. Please upload a CSV file.")
+
+    # Profiles are explicit presets of these same params: an explicitly passed
+    # query param always wins, and only unset params fall back to the profile.
+    profile = None
+    if profile_id is not None:
+        profile = session.get(ContextProfile, profile_id)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
+
+        genre = genre if genre is not None else profile.genre
+        tag = tag if tag is not None else profile.tag
+        length = length if length is not None else profile.length
+        attention_level = attention_level if attention_level is not None else profile.attention_level
+        mood = mood if mood is not None else profile.mood
+        available_minutes = available_minutes if available_minutes is not None else profile.available_minutes
+        energy = energy if energy is not None else profile.energy
+        context = context if context is not None else profile.context
+        unplayed_only = unplayed_only if unplayed_only is not None else profile.unplayed_only
+
+    unplayed_only = bool(unplayed_only)
 
     min_len = None
     max_len = None
@@ -1542,6 +1622,8 @@ async def recommend_game(
         result = game.to_dict()
         result["score"] = int(result.get("score", 0))
         result["reasons"] = list(result.get("reasons") or [])
+        if profile is not None:
+            result["reasons"].append(f"Profile: {profile.name}")
         return result
 
     result = serialize(games[0])

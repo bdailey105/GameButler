@@ -4,7 +4,7 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -1974,3 +1974,122 @@ def test_resume_last_activity_at_and_recency_breaks_ties(client):
     assert candidate["id"] == 2
     assert "Active in the last 14 days" in candidate["reasons"]
     assert candidate["last_activity_at"] is not None
+
+# --- Context Profiles (E32) ---
+
+def test_profile_crud_roundtrip(client):
+    response = client.post("/profiles", json={"name": "Cozy Night", "mood": "story_night", "energy": "low"})
+    assert response.status_code == 200
+    created = response.json()
+    assert created["name"] == "Cozy Night"
+    assert created["mood"] == "story_night"
+    assert created["energy"] == "low"
+    profile_id = created["id"]
+
+    list_response = client.get("/profiles")
+    assert list_response.status_code == 200
+    names = [profile["name"] for profile in list_response.json()]
+    assert names == sorted(names)
+    assert "Cozy Night" in names
+
+    update_response = client.put(f"/profiles/{profile_id}", json={"energy": "medium"})
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["energy"] == "medium"
+    assert updated["mood"] == "story_night"  # untouched fields survive partial update
+
+    delete_response = client.delete(f"/profiles/{profile_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"ok": True}
+    assert client.get("/profiles").json() == []
+
+def test_profile_create_rejects_duplicate_name_case_insensitive(client):
+    first = client.post("/profiles", json={"name": "Zone Out"})
+    assert first.status_code == 200
+
+    duplicate = client.post("/profiles", json={"name": "zone out"})
+    assert duplicate.status_code == 409
+
+def test_profile_update_rejects_rename_into_existing_name(client):
+    client.post("/profiles", json={"name": "Alpha"})
+    beta = client.post("/profiles", json={"name": "Beta"}).json()
+
+    response = client.put(f"/profiles/{beta['id']}", json={"name": "alpha"})
+    assert response.status_code == 409
+
+def test_profile_update_unknown_id_returns_404(client):
+    response = client.put("/profiles/999", json={"energy": "low"})
+    assert response.status_code == 404
+
+def test_profile_delete_unknown_id_returns_404(client):
+    response = client.delete("/profiles/999")
+    assert response.status_code == 404
+
+def test_profile_create_rejects_invalid_mood_and_energy(client):
+    assert client.post("/profiles", json={"name": "Bad Mood", "mood": "chaos_mode"}).status_code == 422
+    assert client.post("/profiles", json={"name": "Bad Energy", "energy": "furious"}).status_code == 422
+
+def test_recommend_unknown_profile_id_returns_404(client):
+    df = pd.DataFrame({
+        "AppID": [1],
+        "Name": ["Game A"],
+        "Playtime_Forever": [0],
+        "Average_Playtime": [120],
+        "Genre": ["Action"],
+        "Tags": ["Indie"],
+        "status": [GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.UNSET],
+    })
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get("/recommend?profile_id=999")
+    assert response.status_code == 404
+
+def test_recommend_applies_profile_defaults_and_tags_reasons(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Action Game", "RPG Game"],
+        "Playtime_Forever": [0, 0],
+        "Average_Playtime": [120, 120],
+        "Genre": ["Action", "RPG"],
+        "Tags": ["Indie", "Story"],
+        "status": [GameStatus.LIBRARY, GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.UNSET, AttentionLevel.UNSET],
+    })
+    with Session(engine) as session:
+        session.add(ContextProfile(name="Action Fan", genre="Action"))
+        session.commit()
+        profile_id = session.exec(select(ContextProfile).where(ContextProfile.name == "Action Fan")).first().id
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get(f"/recommend?profile_id={profile_id}")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Name"] == "Action Game"
+    assert "Profile: Action Fan" in data["reasons"]
+    for alt in data["alternates"]:
+        assert "Profile: Action Fan" in alt["reasons"]
+
+def test_recommend_explicit_query_param_overrides_profile(client):
+    df = pd.DataFrame({
+        "AppID": [1, 2],
+        "Name": ["Action Game", "RPG Game"],
+        "Playtime_Forever": [0, 0],
+        "Average_Playtime": [120, 120],
+        "Genre": ["Action", "RPG"],
+        "Tags": ["Indie", "Story"],
+        "status": [GameStatus.LIBRARY, GameStatus.LIBRARY],
+        "attention_level": [AttentionLevel.UNSET, AttentionLevel.UNSET],
+    })
+    with Session(engine) as session:
+        session.add(ContextProfile(name="Action Fan", genre="Action"))
+        session.commit()
+        profile_id = session.exec(select(ContextProfile).where(ContextProfile.name == "Action Fan")).first().id
+
+    with patch("src.api.recommender", GameRecommender(df)):
+        response = client.get(f"/recommend?profile_id={profile_id}&genre=RPG")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["Name"] == "RPG Game"
+    assert "Profile: Action Fan" in data["reasons"]

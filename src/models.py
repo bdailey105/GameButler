@@ -140,3 +140,145 @@ class RecommendationDecision(SQLModel, table=True):
     mood: Optional[str] = None  # recommendation context at decision time
     tags_snapshot: Optional[str] = None  # game's tags when decided — keeps affinity deterministic
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Allowed values mirror the /recommend query params exactly — profiles are
+# explicit presets of those same parameters, not a separate vocabulary.
+CONTEXT_PROFILE_LENGTHS = {"short", "medium", "long"}
+CONTEXT_PROFILE_ATTENTION_LEVELS = {"casual", "focused"}
+CONTEXT_PROFILE_MOODS = {"zone_out", "story_night", "short_session", "finish_something", "surprise_me"}
+CONTEXT_PROFILE_ENERGY_LEVELS = {"low", "medium", "high"}
+CONTEXT_PROFILE_CONTEXTS = {"desk", "couch", "handheld", "podcast"}
+
+def _validate_choice(value: Optional[str], allowed: set, label: str) -> Optional[str]:
+    if value is None:
+        return value
+    if value not in allowed:
+        raise ValueError(f"Invalid {label}: {value!r}. Must be one of {sorted(allowed)}")
+    return value
+
+def _check_profile_length(value: Optional[str]) -> Optional[str]:
+    return _validate_choice(value, CONTEXT_PROFILE_LENGTHS, "length")
+
+def _check_profile_attention_level(value: Optional[str]) -> Optional[str]:
+    return _validate_choice(value, CONTEXT_PROFILE_ATTENTION_LEVELS, "attention_level")
+
+def _check_profile_mood(value: Optional[str]) -> Optional[str]:
+    return _validate_choice(value, CONTEXT_PROFILE_MOODS, "mood")
+
+def _check_profile_energy(value: Optional[str]) -> Optional[str]:
+    return _validate_choice(value, CONTEXT_PROFILE_ENERGY_LEVELS, "energy")
+
+def _check_profile_context(value: Optional[str]) -> Optional[str]:
+    return _validate_choice(value, CONTEXT_PROFILE_CONTEXTS, "context")
+
+class ContextProfile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    mood: Optional[str] = None
+    energy: Optional[str] = None
+    context: Optional[str] = None
+    attention_level: Optional[str] = None
+    length: Optional[str] = None
+    genre: Optional[str] = None
+    tag: Optional[str] = None
+    available_minutes: Optional[int] = Field(default=None, ge=5, le=600)
+    unplayed_only: bool = False
+
+    @field_validator("length")
+    @classmethod
+    def _validate_length(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_length(value)
+
+    @field_validator("attention_level")
+    @classmethod
+    def _validate_attention_level(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_attention_level(value)
+
+    @field_validator("mood")
+    @classmethod
+    def _validate_mood(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_mood(value)
+
+    @field_validator("energy")
+    @classmethod
+    def _validate_energy(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_energy(value)
+
+    @field_validator("context")
+    @classmethod
+    def _validate_context(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_context(value)
+
+class ContextProfileCreate(SQLModel):
+    name: str
+    mood: Optional[str] = None
+    energy: Optional[str] = None
+    context: Optional[str] = None
+    attention_level: Optional[str] = None
+    length: Optional[str] = None
+    genre: Optional[str] = None
+    tag: Optional[str] = None
+    available_minutes: Optional[int] = Field(default=None, ge=5, le=600)
+    unplayed_only: bool = False
+
+    @field_validator("length")
+    @classmethod
+    def _validate_length(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_length(value)
+
+    @field_validator("attention_level")
+    @classmethod
+    def _validate_attention_level(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_attention_level(value)
+
+    @field_validator("mood")
+    @classmethod
+    def _validate_mood(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_mood(value)
+
+    @field_validator("energy")
+    @classmethod
+    def _validate_energy(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_energy(value)
+
+    @field_validator("context")
+    @classmethod
+    def _validate_context(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_context(value)
+
+class ContextProfileUpdate(SQLModel):
+    name: Optional[str] = None
+    mood: Optional[str] = None
+    energy: Optional[str] = None
+    context: Optional[str] = None
+    attention_level: Optional[str] = None
+    length: Optional[str] = None
+    genre: Optional[str] = None
+    tag: Optional[str] = None
+    available_minutes: Optional[int] = Field(default=None, ge=5, le=600)
+    unplayed_only: Optional[bool] = None
+
+    @field_validator("length")
+    @classmethod
+    def _validate_length(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_length(value)
+
+    @field_validator("attention_level")
+    @classmethod
+    def _validate_attention_level(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_attention_level(value)
+
+    @field_validator("mood")
+    @classmethod
+    def _validate_mood(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_mood(value)
+
+    @field_validator("energy")
+    @classmethod
+    def _validate_energy(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_energy(value)
+
+    @field_validator("context")
+    @classmethod
+    def _validate_context(cls, value: Optional[str]) -> Optional[str]:
+        return _check_profile_context(value)
