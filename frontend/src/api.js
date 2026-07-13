@@ -163,4 +163,14 @@ export const deleteProfile = async (id) => {
   return response.data;
 };
 
+export const fetchPendingOutcome = async () => {
+  const response = await api.get('/session-outcomes/pending');
+  return response.data;
+};
+
+export const postSessionOutcome = async (payload) => {
+  const response = await api.post('/session-outcomes', payload);
+  return response.data;
+};
+
 export default api;

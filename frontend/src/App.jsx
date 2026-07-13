@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile, fetchPendingOutcome, postSessionOutcome } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -461,6 +461,8 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [profiles, setProfiles] = useState([])
   const [activeProfileId, setActiveProfileId] = useState(null)
   const [profileError, setProfileError] = useState('')
+  const [pendingOutcome, setPendingOutcome] = useState(null)
+  const [outcomeConfirmed, setOutcomeConfirmed] = useState(false)
   const timeOptions = [
     { value: 15, label: '15 min' },
     { value: 30, label: '30 min' },
@@ -509,6 +511,12 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     fetchProfiles()
       .then(setProfiles)
       .catch(() => setProfiles([]))
+  }, [])
+
+  useEffect(() => {
+    fetchPendingOutcome()
+      .then(data => setPendingOutcome(data?.pending || null))
+      .catch(() => setPendingOutcome(null))
   }, [])
 
   const withClear = (setter) => (value) => {
@@ -617,6 +625,19 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     setActiveProfileId(null)
   }
 
+  const handleOutcome = (fit) => {
+    if (!pendingOutcome) return
+    postSessionOutcome({ decision_id: pendingOutcome.decision_id, fit })
+      .then(() => {
+        if (fit === 'skipped') {
+          setPendingOutcome(null)
+        } else {
+          setOutcomeConfirmed(true)
+        }
+      })
+      .catch(() => setPendingOutcome(null))
+  }
+
   const sessionSummaryText = (snapshot) => {
     if (!snapshot) return ''
     const parts = []
@@ -650,6 +671,25 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
 
   return (
     <div className="view concierge-view">
+      {pendingOutcome && (
+        <div className="outcome-card">
+          {outcomeConfirmed ? (
+            <span className="outcome-confirm">Noted — thanks</span>
+          ) : (
+            <>
+              <span className="outcome-text">
+                Last time you picked {pendingOutcome.game_name} — did it fit what you wanted?
+              </span>
+              <div className="outcome-actions">
+                <button className="planner-chip" onClick={() => handleOutcome('great_fit')}>Great fit</button>
+                <button className="planner-chip" onClick={() => handleOutcome('partly')}>Partly</button>
+                <button className="planner-chip" onClick={() => handleOutcome('not_a_fit')}>Not really</button>
+                <button className="outcome-skip" onClick={() => handleOutcome('skipped')}>Skip</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className="butler-mode-toggle" role="group" aria-label="Butler mode">
         <button
           type="button"
