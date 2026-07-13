@@ -942,12 +942,12 @@ After a chosen session, offer an optional one-question reflection: whether the g
 
 ## E34 — Backlog Archaeology
 
-**Status:** In progress
+**Status:** Done (2026-07-13: /archaeology digs + dismiss/defer, dashboard archives strip; 215 backend tests, lint+build clean, dig/defer flow smoke-tested on real library)
 
 Periodically surface neglected games using transparent facts such as last-seen date, playtime, and similarity to a recently enjoyed game. Every surfaced game supports dismiss/defer; no guilt-based streaks or opaque engagement metrics.
 
 ## E35 — Curated Rotations
 
-**Status:** Backlog
+**Status:** In progress
 
 Allow owner-controlled seasonal or thematic shelves—such as comfort games, Halloween, or before-the-sequel—to act as visible, reversible recommendation signals. A rotation is curated data, not a hidden algorithmic preference.

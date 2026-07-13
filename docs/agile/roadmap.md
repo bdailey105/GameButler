@@ -135,7 +135,7 @@ This sequence uses the existing rich production metadata as a foundation, then a
 | E31 | Resume Me | Done | A home-screen continuation card joins return context, next milestone, approximate remaining time, and a launch action. |
 | E32 | Gaming Context Profiles | Done | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
 | E33 | Post-Session Outcomes | Done | Optional structured reflection on whether a recommendation fit the actual session. |
-| E34 | Backlog Archaeology | In progress | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
-| E35 | Curated Rotations | Backlog | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
+| E34 | Backlog Archaeology | Done | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
+| E35 | Curated Rotations | In progress | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
 
 Success signal: the app provides a credible next action with enough personal context to launch a game rather than reopen a browsing loop.
