@@ -948,6 +948,6 @@ Periodically surface neglected games using transparent facts such as last-seen d
 
 ## E35 — Curated Rotations
 
-**Status:** In progress
+**Status:** Done (2026-07-13: Rotation CRUD + membership, +15 visible scoring signal, drawer management UI; 230 backend tests, lint+build clean, boost/deactivate loop smoke-tested live)
 
 Allow owner-controlled seasonal or thematic shelves—such as comfort games, Halloween, or before-the-sequel—to act as visible, reversible recommendation signals. A rotation is curated data, not a hidden algorithmic preference.

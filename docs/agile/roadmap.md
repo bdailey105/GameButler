@@ -136,6 +136,6 @@ This sequence uses the existing rich production metadata as a foundation, then a
 | E32 | Gaming Context Profiles | Done | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
 | E33 | Post-Session Outcomes | Done | Optional structured reflection on whether a recommendation fit the actual session. |
 | E34 | Backlog Archaeology | Done | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
-| E35 | Curated Rotations | In progress | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
+| E35 | Curated Rotations | Done | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
 
 Success signal: the app provides a credible next action with enough personal context to launch a game rather than reopen a browsing loop.
