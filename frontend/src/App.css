@@ -770,6 +770,100 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
+.archaeology-section {
+  margin-top: var(--space-6);
+}
+
+.archaeology-section h2 {
+  margin-bottom: var(--space-1);
+  font-size: 1.1rem;
+}
+
+.archaeology-subtitle {
+  margin: 0 0 var(--space-4);
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+}
+
+.archaeology-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.archaeology-card {
+  display: flex;
+  flex: 1 1 300px;
+  max-width: 380px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card-alt);
+}
+
+.archaeology-card-art,
+.archaeology-card-placeholder {
+  width: 64px;
+  aspect-ratio: 460 / 215;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.archaeology-card-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--bg-base);
+  color: var(--text-tertiary);
+  font-weight: 850;
+  font-size: 0.85rem;
+}
+
+.archaeology-card-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.archaeology-card-name {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.archaeology-card-name:hover {
+  color: var(--brand-light);
+  text-decoration: underline;
+}
+
+.archaeology-card-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+}
+
+.archaeology-card-actions {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--space-1);
+}
+
+.archaeology-card-actions .action-btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
+
 .activity-list {
   list-style: none;
   padding: 0;
@@ -1723,5 +1817,16 @@ select:focus-visible {
   .resume-card-launch,
   .resume-card-launch-disabled {
     width: 100%;
+  }
+
+  .archaeology-card {
+    flex: 1 1 100%;
+    max-width: none;
+    align-items: flex-start;
+  }
+
+  .archaeology-card-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile, fetchPendingOutcome, postSessionOutcome } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile, fetchPendingOutcome, postSessionOutcome, fetchArchaeology, dismissArchaeology } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -1118,14 +1118,58 @@ function ResumeCard({ candidate, onOpenDetail }) {
   )
 }
 
+function ArchaeologyCard({ game, onOpenDetail, onUpNext, onDefer, onDismiss }) {
+  return (
+    <div className="archaeology-card">
+      {game.header_image ? (
+        <img className="archaeology-card-art" src={game.header_image} alt="" loading="lazy" />
+      ) : (
+        <div className="archaeology-card-placeholder">{game.name?.slice(0, 1) || '?'}</div>
+      )}
+      <div className="archaeology-card-body">
+        <button className="archaeology-card-name" onClick={() => onOpenDetail(game.id)}>{game.name}</button>
+        {game.reasons?.length > 0 && (
+          <div className="archaeology-card-reasons">
+            {game.reasons.map(reason => (
+              <span className="badge secondary" key={reason}>{reason}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="archaeology-card-actions">
+        <button className="action-btn primary" title="Add to Up Next" onClick={() => onUpNext(game.id)}>Up Next</button>
+        <button className="action-btn" title="Remind me later" onClick={() => onDefer(game.id)}>Later</button>
+        <button className="action-btn" title="Not interested" onClick={() => onDismiss(game.id)}>Not interested</button>
+      </div>
+    </div>
+  )
+}
+
 function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
   const [activity, setActivity] = useState(null)
   const [resumeCandidate, setResumeCandidate] = useState(null)
+  const [digs, setDigs] = useState([])
 
   useEffect(() => {
     fetchActivity().then(setActivity).catch(() => {})
     fetchResume().then(res => setResumeCandidate(res?.candidate ?? null)).catch(() => {})
+    fetchArchaeology().then(res => setDigs(res?.digs ?? [])).catch(() => {})
   }, [])
+
+  const handleArchaeologyUpNext = async (gameId) => {
+    await onMove(gameId, 'up_next')
+    setDigs(prev => prev.filter(dig => dig.id !== gameId))
+  }
+
+  const handleArchaeologyDismiss = async (gameId, action) => {
+    try {
+      await dismissArchaeology(gameId, action)
+    } catch (err) {
+      console.error('Failed to update archaeology dig:', err)
+    } finally {
+      setDigs(prev => prev.filter(dig => dig.id !== gameId))
+    }
+  }
 
   const playing = games.filter(g => g.status === 'playing')
   const upNext = games
@@ -1214,6 +1258,25 @@ function DashboardView({ games, onMove, onAttentionChange, onOpenDetail }) {
           )}
         </section>
       </div>
+
+      {digs.length > 0 && (
+        <section className="archaeology-section">
+          <h2>From the archives</h2>
+          <p className="archaeology-subtitle">Games you own that might deserve another look — no obligation.</p>
+          <div className="archaeology-row">
+            {digs.map(game => (
+              <ArchaeologyCard
+                key={game.id}
+                game={game}
+                onOpenDetail={onOpenDetail}
+                onUpNext={handleArchaeologyUpNext}
+                onDefer={(id) => handleArchaeologyDismiss(id, 'deferred')}
+                onDismiss={(id) => handleArchaeologyDismiss(id, 'dismissed')}
+              />
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

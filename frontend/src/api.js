@@ -173,4 +173,14 @@ export const postSessionOutcome = async (payload) => {
   return response.data;
 };
 
+export const fetchArchaeology = async () => {
+  const response = await api.get('/archaeology');
+  return response.data;
+};
+
+export const dismissArchaeology = async (gameId, action) => {
+  const response = await api.post(`/archaeology/${gameId}/dismiss`, { action });
+  return response.data;
+};
+
 export default api;
