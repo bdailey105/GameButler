@@ -502,7 +502,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to record my own notes, rating, and play milestones for a game, **so that** I can resume it without reconstructing context from memory.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** None
 
@@ -523,7 +523,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -
 
 **As a** GameButler client, **I want** read/write endpoints for personal game context and journal entries, **so that** the frontend can show a complete game history without client-side data hacks.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E25-S1
 
@@ -544,7 +544,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py -q
 
 **As a** GameButler user, **I want** a detail drawer from any game card, **so that** I can view metadata, play history, and personal notes without losing my place in the library.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E25-S2, E22
 
@@ -569,7 +569,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to record why I accepted or rejected a recommendation, **so that** future picks reflect my actual preferences rather than only static metadata.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E14
 
@@ -590,7 +590,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -
 
 **As a** GameButler user, **I want** to give quick feedback directly on Butler picks, **so that** I can reject an unhelpful answer in one step.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E26-S1
 
@@ -611,7 +611,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** recommendation explanations to show how my feedback affected a pick, **so that** preference learning remains trustworthy and under my control.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E26-S1
 
@@ -637,7 +637,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -
 
 **As a** GameButler user, **I want** to describe tonight's available time, energy, and setting, **so that** Butler can distinguish a short game from a game that fits this particular session.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E14, E15
 
@@ -659,7 +659,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_recommender.py tests/test_api.py -
 
 **As a** GameButler user, **I want** a one-screen session planner, **so that** I can ask for a useful recommendation without configuring raw metadata filters.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E27-S1
 
@@ -680,7 +680,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to mark a game as good for bursts, controller-only, or podcast-friendly, **so that** personal experience can correct generic metadata.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E25-S1, E27-S1
 
@@ -705,7 +705,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py t
 
 **As a** GameButler user, **I want** to pause a game with an optional return note, **so that** I can defer it without confusing it with an abandoned or never-started game.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E25-S1
 
@@ -726,7 +726,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py t
 
 **As a** GameButler user, **I want** a clearly qualified estimate of what remains for a started game, **so that** I can choose between a continuation and a fresh start responsibly.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E28-S1, E19
 
@@ -747,7 +747,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_recommender.py -
 
 **As a** GameButler user, **I want** ranked continuation options such as “15 minutes,” “one session,” and “this week,” **so that** progress feels approachable rather than like another backlog obligation.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E27-S1, E28-S2
 
@@ -773,7 +773,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** to update selected games together, **so that** I can apply consistent backlog and attention decisions efficiently.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E21
 
@@ -794,7 +794,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_api.py tests/test_persistence.py -
 
 **As a** GameButler user, **I want** to select and update multiple library games from the list view, **so that** I can clean up a large backlog quickly.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E29-S1
 
@@ -815,7 +815,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** focused views for neglected or uncategorized games, **so that** I can make small, intentional cleanup passes.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E29-S2
 
@@ -841,7 +841,7 @@ cd frontend && npm run lint && npm run build
 
 **As a** GameButler user, **I want** imported non-Steam games to retain their platform and source identity, **so that** repeated imports update the right record instead of creating duplicates.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** AFK
 **Blocked by:** E16, E21
 
@@ -862,7 +862,7 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_persistence.py tests/test_api.py -
 
 **As a** GameButler user, **I want** to preview a non-Steam library import before it writes, **so that** I can safely bring in Switch, PlayStation, Xbox, retro, or launcher-exported games.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** HITL
 **Blocked by:** E30-S1, E20
 
@@ -883,19 +883,71 @@ env -u PYTHONPATH .venv/bin/pytest tests/test_data_loader.py tests/test_api.py -
 
 **As a** GameButler user, **I want** a guided import flow and source filters, **so that** games from every platform remain understandable in one concierge library.
 
-**Status:** Backlog
+**Status:** Implemented — integration verification pending
 **Type:** HITL
 **Blocked by:** E30-S2
 
 #### Acceptance Criteria
 
-- [ ] Upload guides the user through file selection, preview, explicit confirmation, and results for external-library imports.
-- [ ] Library and game detail surfaces show platform/source identity without cluttering Steam-only workflows.
-- [ ] Source and platform filters can be combined with existing status, attention, and search filters.
-- [ ] The UI explains that imports are local and account credentials are not requested or stored.
+- [x] Upload guides the user through file selection, preview, explicit confirmation, and results for external-library imports.
+- [x] Library and game detail surfaces show platform/source identity without cluttering Steam-only workflows.
+- [x] Source and platform filters can be combined with existing status, attention, and search filters.
+- [x] The UI explains that imports are local and account credentials are not requested or stored.
 
-#### Verification
+#### Verification to record after integration
 
 ```bash
 cd frontend && npm run lint && npm run build
 ```
+
+## Reconciliation — E25 through E30
+
+**Status:** Implemented on `Codex-update`; integration verification pending.
+
+Git commits `6a4f5b1` through `a284f1b` implement E25–E30 and include corresponding backend/frontend test changes. The branch is ahead of its remote and behind by one commit, so these stories must not be marked Done until their integration/rebase decision is made and the current backend, frontend, and Docker/LAN quality gates are recorded.
+
+## E31 — Resume Me
+
+**Status:** Ready after E25–E30 integration gate
+
+**Goal:** Put the best continuation decision on the home surface so resuming a game takes less effort than browsing the library.
+
+### Story E31-S1 — Build a deterministic resume candidate
+
+**Acceptance Criteria**
+
+- [ ] Backend ranks paused/playing/Up Next games using existing return notes, recent activity, queue position, and qualified remaining-time data.
+- [ ] The response includes explicit reasons and never invents progress or context when data is missing.
+- [ ] Tests cover tie-breaking, missing notes, excluded statuses, and approximate estimates.
+
+### Story E31-S2 — Render a launchable resume card
+
+**Acceptance Criteria**
+
+- [ ] Dashboard renders one clear continuation card with return note, next milestone, estimate caveat, and available launcher link.
+- [ ] Missing Steam/launcher identity disables launch gracefully without hiding the game context.
+- [ ] Mobile and desktop states remain aligned to the Launcher design system.
+
+## E32 — Gaming Context Profiles
+
+**Status:** Backlog
+
+Persist reusable, user-controlled profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, or 30-minute sessions. Profiles apply explainable filtering/bonuses; they do not infer hardware or preferences silently.
+
+## E33 — Post-Session Outcomes
+
+**Status:** Backlog
+
+After a chosen session, offer an optional one-question reflection: whether the game fit the intended mood, time, and setting. The signal supplements—not replaces—existing explicit feedback.
+
+## E34 — Backlog Archaeology
+
+**Status:** Backlog
+
+Periodically surface neglected games using transparent facts such as last-seen date, playtime, and similarity to a recently enjoyed game. Every surfaced game supports dismiss/defer; no guilt-based streaks or opaque engagement metrics.
+
+## E35 — Curated Rotations
+
+**Status:** Backlog
+
+Allow owner-controlled seasonal or thematic shelves—such as comfort games, Halloween, or before-the-sequel—to act as visible, reversible recommendation signals. A rotation is curated data, not a hidden algorithmic preference.

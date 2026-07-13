@@ -4,18 +4,18 @@ This folder tracks the next product path for GameButler as a local/home-LAN pers
 
 ## Current Direction
 
-GameButler already has the core MVP: Steam CSV import, SQLite-backed library state, backlog status management, attention tagging, basic Steam enrichment, and Docker/LAN deployment. The next path is to make it feel less like a CRUD backlog and more like a concierge that helps Bryan decide what to play.
+GameButler has moved beyond the core MVP: Steam and external-library import, SQLite-backed library state, rich metadata, backlog curation, game journal, concierge feedback, tonight planning, continuation/finish guidance, and Docker/LAN deployment all exist on the current `Codex-update` branch. That branch is ahead of its remote and behind by one commit, so the previously planned E25–E30 capabilities are recorded as implemented-but-needing integration verification rather than silently treated as merged/released. The next path is to make the concierge more useful at the exact moment Bryan decides whether to resume, start, or set up a game.
 
 ## Current Planned Sequence
 
-1. **E25 — Game Detail & Play Journal:** preserve private return context, notes, ratings, and milestones.
-2. **E26 — Concierge Feedback & Preference Learning:** make recommendation acceptance and rejection actionable, explainable signals.
-3. **E27 — Tonight Planner:** match a recommendation to available time, energy, and play setting.
-4. **E28 — Continuation & Finish Ladder:** make started or paused games approachable with qualified estimates.
-5. **E29 — Bulk Library Curation:** support intentional cleanup of a large library in batches.
-6. **E30 — Unified Library Import:** safely import non-Steam ownership without account-linking dependencies.
+1. **Integration gate for E25–E30:** rebase/merge the current `Codex-update` work deliberately, then run backend, frontend, and Docker/LAN verification before calling those epics Done.
+2. **E31 — Resume Me:** put the strongest continuation candidate, return context, next milestone, and launch action in one low-friction home-screen card.
+3. **E32 — Gaming Context Profiles:** support reusable setup-aware recommendation profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions.
+4. **E33 — Post-Session Outcomes:** capture an optional lightweight answer to whether a recommended session fit the desired mood and duration.
+5. **E34 — Backlog Archaeology:** periodically resurface neglected games with transparent reasons, never guilt or opaque scoring.
+6. **E35 — Curated Rotations:** owner-controlled seasonal or thematic shelves that act as an explicit recommendation signal.
 
-`BACKLOG.md` retains the concise historical epic list. `product-backlog.md` is the implementation-ready source for the detailed acceptance criteria and verification commands for E25–E30.
+`BACKLOG.md` retains the concise historical epic list. `product-backlog.md` is the implementation-ready source for E25–E30 reconciliation and the next E31–E35 opportunities; `roadmap.md` is the current phase/order summary.
 
 ## Documents
 

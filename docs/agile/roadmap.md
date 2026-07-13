@@ -67,7 +67,7 @@ Success signal: GameButler can say why a game is a good pick for tonight.
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E25 | Game Detail & Play Journal | Backlog | Each game has private notes, ratings, milestones, and an accessible detail drawer. |
+| E25 | Game Detail & Play Journal | Implemented — integration verification pending | Current `Codex-update` branch adds private notes, ratings, milestones, and detail UI; confirm after branch integration. |
 
 Success signal: Bryan can resume a game weeks later knowing where he left off and why he intended to return.
 
@@ -77,8 +77,8 @@ Success signal: Bryan can resume a game weeks later knowing where he left off an
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E26 | Concierge Feedback & Preference Learning | Backlog | Butler learns from accepted, rejected, and deferred recommendations without opaque behavior. |
-| E27 | Tonight Planner | Backlog | Recommendations account for time, energy, and play setting rather than only genre or total length. |
+| E26 | Concierge Feedback & Preference Learning | Implemented — integration verification pending | Current branch records transparent accept/reject/defer feedback and applies explainable scoring adjustments. |
+| E27 | Tonight Planner | Implemented — integration verification pending | Current branch uses time, energy, and play-setting context for recommendations. |
 
 Success signal: Bryan can ask what fits tonight and see a transparent explanation grounded in both current context and prior choices.
 
@@ -88,8 +88,8 @@ Success signal: Bryan can ask what fits tonight and see a transparent explanatio
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E28 | Continuation & Finish Ladder | Backlog | Started or paused games surface as realistic continuation and finish options with qualified estimates. |
-| E29 | Bulk Library Curation | Backlog | Selection, batch actions, and focused filter views eliminate one-card-at-a-time library cleanup. |
+| E28 | Continuation & Finish Ladder | Implemented — integration verification pending | Current branch adds paused/return context and qualified continuation or finish guidance. |
+| E29 | Bulk Library Curation | Implemented — integration verification pending | Current branch adds bulk library actions and batch curation workflows. |
 
 Success signal: Bryan can make a small, intentional curation pass and choose a meaningful continuation without turning the backlog into an obligation.
 
@@ -99,7 +99,7 @@ Success signal: Bryan can make a small, intentional curation pass and choose a m
 
 | Epic | Title | Status | Outcome |
 | --- | --- | --- | --- |
-| E30 | Unified Library Import | Backlog | Source-aware, preview-first imports unify local records from Switch, PlayStation, Xbox, retro, and launcher exports. |
+| E30 | Unified Library Import | Implemented — integration verification pending | Current branch adds preview-first, source-aware external-library import without account credentials. |
 
 Success signal: GameButler can recommend across the games Bryan owns without storing third-party account credentials.
 
@@ -125,3 +125,17 @@ Success signal: adding personal context and import sources does not risk losing 
 6. E30 — Unified Library Import.
 
 This sequence uses the existing rich production metadata as a foundation, then adds personal memory, explicit intent, and feedback before widening the library's scope.
+
+## Phase 8 — Moment-of-Choice Concierge
+
+**Goal:** Make GameButler useful in the few seconds when Bryan decides whether to resume, start, or set up a session.
+
+| Epic | Title | Status | Outcome |
+| --- | --- | --- | --- |
+| E31 | Resume Me | Ready after E25–E30 integration gate | A home-screen continuation card joins return context, next milestone, approximate remaining time, and a launch action. |
+| E32 | Gaming Context Profiles | Backlog | Reusable setup-aware profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, and 30-minute sessions. |
+| E33 | Post-Session Outcomes | Backlog | Optional structured reflection on whether a recommendation fit the actual session. |
+| E34 | Backlog Archaeology | Backlog | Periodically resurface neglected games with transparent reasons and an easy dismiss/defer path. |
+| E35 | Curated Rotations | Backlog | Owner-controlled seasonal or thematic shelves that become explicit, reversible recommendation signals. |
+
+Success signal: the app provides a credible next action with enough personal context to launch a game rather than reopen a browsing loop.
