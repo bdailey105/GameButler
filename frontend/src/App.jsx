@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile, fetchPendingOutcome, postSessionOutcome, fetchArchaeology, dismissArchaeology } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile, fetchPendingOutcome, postSessionOutcome, fetchArchaeology, dismissArchaeology, fetchRotations, createRotation, updateRotation, deleteRotation, addRotationGame, removeRotationGame } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -165,6 +165,11 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
   const [newEntry, setNewEntry] = useState('')
   const [addingEntry, setAddingEntry] = useState(false)
 
+  const [rotations, setRotations] = useState([])
+  const [newRotationName, setNewRotationName] = useState('')
+  const [rotationError, setRotationError] = useState('')
+  const [creatingRotation, setCreatingRotation] = useState(false)
+
   const drawerRef = useRef(null)
   const previouslyFocused = useRef(null)
 
@@ -191,6 +196,14 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
         setLoadError('Failed to load game details.')
       })
       .finally(() => setLoading(false))
+
+    setRotationError('')
+    fetchRotations()
+      .then(data => setRotations(data || []))
+      .catch(err => {
+        console.error('Failed to load rotations:', err)
+        setRotations([])
+      })
   }, [appId])
 
   useEffect(() => {
@@ -292,6 +305,63 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
       setJournal(prev => prev.filter(entry => entry.id !== entryId))
     } catch (err) {
       console.error('Failed to delete journal entry:', err)
+    }
+  }
+
+  const toggleRotationMembership = async (rotation) => {
+    const isMember = rotation.game_ids.includes(appId)
+    setRotations(prev => prev.map(r => r.id === rotation.id
+      ? { ...r, game_ids: isMember ? r.game_ids.filter(id => id !== appId) : [...r.game_ids, appId] }
+      : r
+    ))
+    try {
+      if (isMember) {
+        await removeRotationGame(rotation.id, appId)
+      } else {
+        await addRotationGame(rotation.id, appId)
+      }
+    } catch (err) {
+      console.error('Failed to update rotation membership:', err)
+      setRotations(prev => prev.map(r => r.id === rotation.id ? rotation : r))
+    }
+  }
+
+  const handleCreateRotation = async () => {
+    const name = newRotationName.trim()
+    if (!name || creatingRotation) return
+    setCreatingRotation(true)
+    setRotationError('')
+    try {
+      const created = await createRotation(name)
+      setRotations(prev => [...prev, created])
+      setNewRotationName('')
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setRotationError(`A rotation named "${name}" already exists.`)
+      } else {
+        setRotationError('Could not create this rotation.')
+      }
+    } finally {
+      setCreatingRotation(false)
+    }
+  }
+
+  const handleToggleRotationActive = async (rotation) => {
+    try {
+      const updated = await updateRotation(rotation.id, { active: !rotation.active })
+      setRotations(prev => prev.map(r => r.id === rotation.id ? updated : r))
+    } catch (err) {
+      console.error('Failed to update rotation:', err)
+    }
+  }
+
+  const handleDeleteRotation = async (rotation) => {
+    if (!window.confirm(`Delete the "${rotation.name}" rotation?`)) return
+    try {
+      await deleteRotation(rotation.id)
+      setRotations(prev => prev.filter(r => r.id !== rotation.id))
+    } catch (err) {
+      console.error('Failed to delete rotation:', err)
     }
   }
 
@@ -407,6 +477,60 @@ function GameDetailDrawer({ appId, onClose, onGameChanged }) {
                 {saveState === 'saved' && <span className="success-msg">Saved</span>}
                 {saveState === 'error' && <span className="drawer-error-text">{saveError}</span>}
               </div>
+            </section>
+
+            <section className="drawer-section">
+              <h3>Rotations</h3>
+              <p className="empty-hint">Games in active rotations get a visible boost in Butler picks.</p>
+              <div className="planner-chip-row">
+                {rotations.length === 0 && <p className="empty-hint">No rotations yet.</p>}
+                {rotations.map(rotation => {
+                  const isMember = rotation.game_ids.includes(appId)
+                  return (
+                    <button
+                      key={rotation.id}
+                      type="button"
+                      className={`planner-chip ${isMember ? 'active' : ''} ${!rotation.active ? 'rotation-chip-paused' : ''}`}
+                      onClick={() => toggleRotationMembership(rotation)}
+                    >
+                      {rotation.name}{!rotation.active ? ' (paused)' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="drawer-field rotation-new-row">
+                <input
+                  type="text"
+                  value={newRotationName}
+                  onChange={(e) => setNewRotationName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCreateRotation() }}
+                  placeholder="New rotation name"
+                />
+                <button className="secondary-btn" onClick={handleCreateRotation} disabled={!newRotationName.trim() || creatingRotation}>
+                  {creatingRotation ? 'Adding...' : '+ New rotation'}
+                </button>
+              </div>
+              {rotationError && <span className="drawer-error-text">{rotationError}</span>}
+              {rotations.length > 0 && (
+                <details className="rotation-manage">
+                  <summary>Manage rotations</summary>
+                  <div className="rotation-manage-list">
+                    {rotations.map(rotation => (
+                      <div className="rotation-manage-row" key={rotation.id}>
+                        <span className={rotation.active ? '' : 'rotation-chip-paused'}>
+                          {rotation.name}{!rotation.active ? ' (paused)' : ''}
+                        </span>
+                        <div className="rotation-manage-actions">
+                          <button className="action-btn" onClick={() => handleToggleRotationActive(rotation)}>
+                            {rotation.active ? 'Pause' : 'Resume'}
+                          </button>
+                          <button className="action-btn danger" title="Delete rotation" onClick={() => handleDeleteRotation(rotation)}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </section>
 
             <section className="drawer-section">

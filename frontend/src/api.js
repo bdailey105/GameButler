@@ -183,4 +183,34 @@ export const dismissArchaeology = async (gameId, action) => {
   return response.data;
 };
 
+export const fetchRotations = async () => {
+  const response = await api.get('/rotations');
+  return response.data;
+};
+
+export const createRotation = async (name) => {
+  const response = await api.post('/rotations', { name });
+  return response.data;
+};
+
+export const updateRotation = async (id, payload) => {
+  const response = await api.put(`/rotations/${id}`, payload);
+  return response.data;
+};
+
+export const deleteRotation = async (id) => {
+  const response = await api.delete(`/rotations/${id}`);
+  return response.data;
+};
+
+export const addRotationGame = async (rotationId, gameId) => {
+  const response = await api.post(`/rotations/${rotationId}/games`, { game_id: gameId });
+  return response.data;
+};
+
+export const removeRotationGame = async (rotationId, gameId) => {
+  const response = await api.delete(`/rotations/${rotationId}/games/${gameId}`);
+  return response.data;
+};
+
 export default api;
