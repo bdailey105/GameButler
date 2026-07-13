@@ -1872,3 +1872,105 @@ def test_delete_recommendation_decisions_clears_all(client):
     with Session(engine) as session:
         remaining = session.exec(select(RecommendationDecision)).all()
         assert remaining == []
+
+def test_resume_empty_db_returns_null_candidate(client):
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    assert response.json() == {"candidate": None}
+
+def test_resume_excludes_library_completed_abandoned(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Library Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Completed Game", playtime_forever=500, status=GameStatus.COMPLETED))
+        session.add(Game(id=3, name="Abandoned Game", playtime_forever=10, status=GameStatus.ABANDONED))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    assert response.json() == {"candidate": None}
+
+def test_resume_playing_beats_paused_beats_up_next(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Zebra Playing", playtime_forever=100, status=GameStatus.PLAYING))
+        session.add(Game(id=2, name="Alpha Paused", playtime_forever=100, status=GameStatus.PAUSED))
+        session.add(Game(id=3, name="Alpha Queued", playtime_forever=0, status=GameStatus.UP_NEXT))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["candidate"]["id"] == 1
+    assert "You're playing this now" in data["candidate"]["reasons"]
+
+def test_resume_paused_tiebreak_prefers_return_when_over_no_notes(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Bare Paused", playtime_forever=100, status=GameStatus.PAUSED))
+        session.add(Game(id=2, name="Noted Paused", playtime_forever=100, status=GameStatus.PAUSED, return_when="After finals"))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["candidate"]["id"] == 2
+    assert "Paused — After finals" in data["candidate"]["reasons"]
+
+def test_resume_up_next_ties_ordered_by_queue_position(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Later In Queue", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=5))
+        session.add(Game(id=2, name="First In Queue", playtime_forever=0, status=GameStatus.UP_NEXT, queue_position=1))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    assert response.json()["candidate"]["id"] == 2
+
+def test_resume_no_average_playtime_returns_null_estimate_without_inventing_reason(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="No Estimate Game", playtime_forever=100, status=GameStatus.PLAYING, average_playtime=None))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    data = response.json()
+    candidate = data["candidate"]
+    assert candidate is not None
+    assert candidate["remaining_estimate"] is None
+    assert not any("left" in reason or "beat" in reason for reason in candidate["reasons"])
+
+def test_resume_launch_url_steam_platform(client):
+    with Session(engine) as session:
+        session.add(Game(id=42, name="Steam Game", playtime_forever=0, status=GameStatus.PLAYING, platform="steam"))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    assert response.json()["candidate"]["launch_url"] == "steam://rungameid/42"
+
+def test_resume_launch_url_null_for_non_steam_platform(client):
+    with Session(engine) as session:
+        session.add(Game(id=7, name="Switch Game", playtime_forever=0, status=GameStatus.PLAYING, platform="switch"))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    assert response.json()["candidate"]["launch_url"] is None
+
+def test_resume_last_activity_at_and_recency_breaks_ties(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Stale Paused", playtime_forever=100, status=GameStatus.PAUSED))
+        session.add(Game(id=2, name="Fresh Paused", playtime_forever=100, status=GameStatus.PAUSED))
+        session.commit()
+
+        recent_time = datetime.now(timezone.utc) - timedelta(days=2)
+        stale_time = datetime.now(timezone.utc) - timedelta(days=30)
+        session.add(PlayEvent(game_id=1, event_type="playtime", created_at=stale_time))
+        session.add(PlayEvent(game_id=2, event_type="playtime", created_at=recent_time))
+        session.commit()
+
+    response = client.get("/recommend/resume")
+    assert response.status_code == 200
+    data = response.json()
+    candidate = data["candidate"]
+    assert candidate["id"] == 2
+    assert "Active in the last 14 days" in candidate["reasons"]
+    assert candidate["last_activity_at"] is not None

@@ -1400,6 +1400,100 @@ async def recommend_continuation(session: Session = Depends(get_session)):
         "finish": [serialize(item) for item in build_bucket(is_finish_candidate)],
     }
 
+# Deliberately different ordering from CONTINUATION_STATUS_PRIORITY: resume is
+# progress-first (actively playing beats paused beats queued).
+RESUME_STATUS_PRIORITY = {
+    GameStatus.PLAYING: 0,
+    GameStatus.PAUSED: 1,
+    GameStatus.UP_NEXT: 2,
+}
+
+# See NOTE above /recommend/continuation — same invariant applies here.
+@app.get("/recommend/resume")
+async def recommend_resume(session: Session = Depends(get_session)):
+    candidates = session.exec(
+        select(Game).where(
+            col(Game.status).in_([GameStatus.PLAYING, GameStatus.PAUSED, GameStatus.UP_NEXT])
+        )
+    ).all()
+
+    if not candidates:
+        return {"candidate": None}
+
+    game_ids = [game.id for game in candidates]
+    events = session.exec(
+        select(PlayEvent)
+        .where(col(PlayEvent.game_id).in_(game_ids))
+        .order_by(PlayEvent.created_at.desc())
+    ).all()
+    last_activity = {}
+    for event in events:
+        last_activity.setdefault(event.game_id, event.created_at)
+
+    now = utc_now()
+    items = []
+    for game in candidates:
+        estimate = estimate_remaining(game)
+        reasons = []
+
+        if game.status == GameStatus.PLAYING:
+            reasons.append("You're playing this now")
+        elif game.status == GameStatus.PAUSED:
+            reasons.append(f"Paused — {game.return_when}" if game.return_when else "Paused")
+        elif game.status == GameStatus.UP_NEXT:
+            reasons.append("Next in your queue")
+
+        if game.current_note:
+            reasons.append(f"Your note: {game.current_note}")
+
+        last_active = last_activity.get(game.id)
+        recent = False
+        if last_active is not None:
+            last_active_aware = last_active if last_active.tzinfo else last_active.replace(tzinfo=timezone.utc)
+            recent = now - last_active_aware < timedelta(days=14)
+            if recent:
+                reasons.append("Active in the last 14 days")
+
+        if estimate is not None:
+            reasons.append(estimate["label"])
+
+        items.append({
+            "game": game,
+            "estimate": estimate,
+            "reasons": reasons,
+            "recent": recent,
+            "last_active": last_active,
+        })
+
+    def rank_key(item):
+        game = item["game"]
+        estimate = item["estimate"]
+        recency_key = 0 if item["recent"] else 1
+        notes_key = 0 if (game.return_when or game.current_note) else 1
+        queue_key = game.queue_position if game.queue_position is not None else 10**9
+        minutes_key = (1, 0) if estimate is None else (0, estimate["minutes"])
+        return (
+            RESUME_STATUS_PRIORITY[game.status],
+            recency_key,
+            notes_key,
+            queue_key,
+            minutes_key,
+            game.name.lower(),
+        )
+
+    ranked = sorted(items, key=rank_key)
+    top = ranked[0]
+    game = top["game"]
+
+    result = game.model_dump()
+    result["remaining_estimate"] = top["estimate"]
+    result["reasons"] = top["reasons"]
+    last_active = top["last_active"]
+    result["last_activity_at"] = last_active.isoformat() if last_active is not None else None
+    result["launch_url"] = f"steam://rungameid/{game.id}" if game.platform == "steam" else None
+
+    return {"candidate": result}
+
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(
     genre: Optional[str] = None,
