@@ -936,13 +936,13 @@ Persist reusable, user-controlled profiles such as desk/controller, TV, Steam De
 
 ## E33 — Post-Session Outcomes
 
-**Status:** In progress
+**Status:** Done (2026-07-13: SessionOutcome + pending/record endpoints, concierge reflection card; 203 backend tests, lint+build clean, endpoints smoke-tested)
 
 After a chosen session, offer an optional one-question reflection: whether the game fit the intended mood, time, and setting. The signal supplements—not replaces—existing explicit feedback.
 
 ## E34 — Backlog Archaeology
 
-**Status:** Backlog
+**Status:** In progress
 
 Periodically surface neglected games using transparent facts such as last-seen date, playtime, and similarity to a recently enjoyed game. Every surfaced game supports dismiss/defer; no guilt-based streaks or opaque engagement metrics.
 
