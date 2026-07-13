@@ -148,4 +148,19 @@ export const postRecommendationDecision = async (payload) => {
   return response.data;
 };
 
+export const fetchProfiles = async () => {
+  const response = await api.get('/profiles');
+  return response.data;
+};
+
+export const createProfile = async (payload) => {
+  const response = await api.post('/profiles', payload);
+  return response.data;
+};
+
+export const deleteProfile = async (id) => {
+  const response = await api.delete(`/profiles/${id}`);
+  return response.data;
+};
+
 export default api;

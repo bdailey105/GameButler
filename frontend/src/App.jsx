@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames } from './api'
+import { fetchGames, updateGame, deleteGame, reorderQueue, getRecommendation, fetchContinuation, fetchResume, uploadLibrary, previewLibraryUpload, previewExternalImport, importExternalLibrary, autoTagLibrary, enrichLibrary, fetchEnrichmentJob, fetchCurrentEnrichmentJob, syncSteamLibrary, fetchActivity, fetchAutomationStatus, addGame, fetchGameDetail, addJournalEntry, deleteJournalEntry, postRecommendationDecision, bulkUpdateGames, fetchProfiles, createProfile, deleteProfile } from './api'
 import './App.css'
 
 const PLATFORM_LABELS = { switch: '🕹 Switch', playstation: '🎮 PlayStation', xbox: '🟢 Xbox', pc: '💻 PC', retro: '👾 Retro' }
@@ -458,6 +458,9 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
   const [feedback, setFeedback] = useState({})
   const [reasonPickerFor, setReasonPickerFor] = useState(null)
   const [lastRecommendation, setLastRecommendation] = useState(recommendation)
+  const [profiles, setProfiles] = useState([])
+  const [activeProfileId, setActiveProfileId] = useState(null)
+  const [profileError, setProfileError] = useState('')
   const timeOptions = [
     { value: 15, label: '15 min' },
     { value: 30, label: '30 min' },
@@ -502,6 +505,91 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     setReasonPickerFor(null)
   }
 
+  useEffect(() => {
+    fetchProfiles()
+      .then(setProfiles)
+      .catch(() => setProfiles([]))
+  }, [])
+
+  const withClear = (setter) => (value) => {
+    setter(value)
+    setActiveProfileId(null)
+  }
+  const setSessionMinutesClear = withClear(setSessionMinutes)
+  const setSessionEnergyClear = withClear(setSessionEnergy)
+  const setSessionContextClear = withClear(setSessionContext)
+  const setMoodClear = withClear(setMood)
+  const setGenreClear = withClear(setGenre)
+  const setTagClear = withClear(setTag)
+  const setLengthClear = withClear(setLength)
+  const setAttentionClear = withClear(setAttention)
+  const setUnplayedClear = withClear(setUnplayed)
+
+  const PROFILE_FIELD_SETTERS = {
+    available_minutes: setSessionMinutes,
+    energy: setSessionEnergy,
+    context: setSessionContext,
+    mood: setMood,
+    genre: setGenre,
+    tag: setTag,
+    length: setLength,
+    attention_level: setAttention,
+    unplayed_only: setUnplayed
+  }
+
+  const applyProfile = (profile) => {
+    if (activeProfileId === profile.id) {
+      setActiveProfileId(null)
+      return
+    }
+    Object.entries(PROFILE_FIELD_SETTERS).forEach(([field, setter]) => {
+      const value = profile[field]
+      if (value !== null && value !== undefined) setter(value)
+    })
+    setActiveProfileId(profile.id)
+    setProfileError('')
+  }
+
+  const handleSaveProfile = async () => {
+    const name = window.prompt('Name this setup')
+    if (!name) return
+    const payload = {
+      name,
+      ...(mood && { mood }),
+      ...(sessionMinutes && { available_minutes: sessionMinutes }),
+      ...(sessionEnergy && { energy: sessionEnergy }),
+      ...(sessionContext && { context: sessionContext }),
+      ...(attention && { attention_level: attention }),
+      ...(length && { length }),
+      ...(genre && { genre }),
+      ...(tag && { tag }),
+      unplayed_only: unplayed
+    }
+    try {
+      const created = await createProfile(payload)
+      setProfiles(prev => [...prev, created])
+      setProfileError('')
+    } catch (err) {
+      if (err.response?.status === 409) {
+        setProfileError(`A profile named "${name}" already exists.`)
+      } else {
+        setProfileError('Could not save this setup.')
+      }
+    }
+  }
+
+  const handleDeleteProfile = async (id) => {
+    if (!window.confirm('Delete this saved setup?')) return
+    try {
+      await deleteProfile(id)
+      setProfiles(prev => prev.filter(p => p.id !== id))
+      if (activeProfileId === id) setActiveProfileId(null)
+      setProfileError('')
+    } catch {
+      setProfileError('Could not delete this setup.')
+    }
+  }
+
   const handleAct = async (appId, status) => {
     try {
       await updateGame(appId, { status })
@@ -526,6 +614,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
     setSessionMinutes(null)
     setSessionEnergy(null)
     setSessionContext(null)
+    setActiveProfileId(null)
   }
 
   const sessionSummaryText = (snapshot) => {
@@ -586,6 +675,34 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
         <p className="eyebrow">Butler</p>
         <h2>What kind of session are you after?</h2>
         <div className="planner-section">
+          <div className="filter-group profile-group">
+            <label>Profiles:</label>
+            <div className="planner-chip-row">
+              {profiles.map(profile => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  className={`planner-chip profile-chip ${activeProfileId === profile.id ? 'active' : ''}`}
+                  onClick={() => applyProfile(profile)}
+                >
+                  {profile.name}
+                  <span
+                    className="profile-chip-delete"
+                    role="button"
+                    aria-label={`Delete profile ${profile.name}`}
+                    title="Delete profile"
+                    onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile.id) }}
+                  >
+                    ×
+                  </span>
+                </button>
+              ))}
+              <button type="button" className="planner-chip profile-save-chip" onClick={handleSaveProfile}>
+                + Save setup…
+              </button>
+            </div>
+            {profileError && <span className="profile-error-text">{profileError}</span>}
+          </div>
           <div className="filter-group">
             <label>Time:</label>
             <div className="planner-chip-row">
@@ -594,7 +711,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                   key={option.value}
                   type="button"
                   className={`planner-chip ${sessionMinutes === option.value ? 'active' : ''}`}
-                  onClick={() => setSessionMinutes(sessionMinutes === option.value ? null : option.value)}
+                  onClick={() => setSessionMinutesClear(sessionMinutes === option.value ? null : option.value)}
                 >
                   {option.label}
                 </button>
@@ -609,7 +726,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                   key={option.value}
                   type="button"
                   className={`planner-chip ${sessionEnergy === option.value ? 'active' : ''}`}
-                  onClick={() => setSessionEnergy(sessionEnergy === option.value ? null : option.value)}
+                  onClick={() => setSessionEnergyClear(sessionEnergy === option.value ? null : option.value)}
                 >
                   {option.label}
                 </button>
@@ -624,7 +741,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
                   key={option.value}
                   type="button"
                   className={`planner-chip ${sessionContext === option.value ? 'active' : ''}`}
-                  onClick={() => setSessionContext(sessionContext === option.value ? null : option.value)}
+                  onClick={() => setSessionContextClear(sessionContext === option.value ? null : option.value)}
                 >
                   {option.label}
                 </button>
@@ -643,7 +760,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
               key={option.value}
               type="button"
               className={`mood-btn ${mood === option.value ? 'active' : ''}`}
-              onClick={() => setMood(mood === option.value ? '' : option.value)}
+              onClick={() => setMoodClear(mood === option.value ? '' : option.value)}
             >
               <strong>{option.label}</strong>
               <span>{option.hint}</span>
@@ -655,15 +772,15 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
           <div className="filter-grid">
             <div className="filter-group">
               <label>Genre:</label>
-              <input type="text" value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="e.g. Action" />
+              <input type="text" value={genre} onChange={(e) => setGenreClear(e.target.value)} placeholder="e.g. Action" />
             </div>
             <div className="filter-group">
               <label>Tag:</label>
-              <input type="text" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="e.g. Indie" />
+              <input type="text" value={tag} onChange={(e) => setTagClear(e.target.value)} placeholder="e.g. Indie" />
             </div>
             <div className="filter-group">
               <label>Length:</label>
-              <select value={length} onChange={(e) => setLength(e.target.value)}>
+              <select value={length} onChange={(e) => setLengthClear(e.target.value)}>
                 <option value="">Any Length</option>
                 <option value="short">Short (&lt; 5h)</option>
                 <option value="medium">Medium (5h - 20h)</option>
@@ -672,7 +789,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
             </div>
             <div className="filter-group">
               <label>Attention:</label>
-              <select value={attention} onChange={(e) => setAttention(e.target.value)}>
+              <select value={attention} onChange={(e) => setAttentionClear(e.target.value)}>
                 <option value="">Any</option>
                 <option value="casual">☕ Casual</option>
                 <option value="focused">🎯 Focused</option>
@@ -681,7 +798,7 @@ function ConciergeView({ loading, error, getRec, recommendation }) {
           </div>
           <div className="filter-group checkbox">
             <label>
-              <input type="checkbox" checked={unplayed} onChange={(e) => setUnplayed(e.target.checked)} />
+              <input type="checkbox" checked={unplayed} onChange={(e) => setUnplayedClear(e.target.checked)} />
               Unplayed Only
             </label>
           </div>

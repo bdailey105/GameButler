@@ -527,6 +527,33 @@ h2 {
   font-size: 0.85rem;
 }
 
+.profile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.profile-chip-delete {
+  color: var(--text-tertiary);
+  line-height: 1;
+  padding: 0 0.15rem;
+}
+
+.profile-chip-delete:hover {
+  color: var(--status-error);
+}
+
+.profile-save-chip {
+  border-style: dashed;
+}
+
+.profile-error-text {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--status-error);
+  font-size: 0.82rem;
+}
+
 input[type="text"],
 input[type="date"],
 select,
