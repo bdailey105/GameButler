@@ -4,7 +4,7 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, SessionOutcome
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -1872,6 +1872,141 @@ def test_delete_recommendation_decisions_clears_all(client):
     with Session(engine) as session:
         remaining = session.exec(select(RecommendationDecision)).all()
         assert remaining == []
+
+def test_pending_session_outcome_null_when_no_decisions(client):
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    assert response.json() == {"pending": None}
+
+def test_pending_session_outcome_null_when_decision_too_recent(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(
+            game_id=1, decision="accepted_play",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        ))
+        session.commit()
+
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    assert response.json() == {"pending": None}
+
+def test_pending_session_outcome_null_when_decision_too_old(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(
+            game_id=1, decision="accepted_play",
+            created_at=datetime.now(timezone.utc) - timedelta(days=8),
+        ))
+        session.commit()
+
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    assert response.json() == {"pending": None}
+
+def test_pending_session_outcome_returns_eligible_decision(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        decided_at = datetime.now(timezone.utc) - timedelta(days=1)
+        session.add(RecommendationDecision(
+            game_id=1, decision="accepted_play", mood="zone_out",
+            created_at=decided_at,
+        ))
+        session.commit()
+
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    pending = response.json()["pending"]
+    assert pending is not None
+    assert pending["game_id"] == 1
+    assert pending["game_name"] == "Game A"
+    assert pending["mood"] == "zone_out"
+    assert "decided_at" in pending
+    with Session(engine) as session:
+        decision = session.exec(select(RecommendationDecision)).first()
+        assert pending["decision_id"] == decision.id
+
+def test_pending_session_outcome_excludes_decision_with_recorded_outcome(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(
+            game_id=1, decision="accepted_play",
+            created_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ))
+        session.commit()
+        decision = session.exec(select(RecommendationDecision)).first()
+        session.add(SessionOutcome(decision_id=decision.id, game_id=1, fit="skipped"))
+        session.commit()
+
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    assert response.json() == {"pending": None}
+
+def test_pending_session_outcome_most_recent_eligible_wins(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.add(Game(id=2, name="Game B", playtime_forever=0))
+        session.add(Game(id=3, name="Game C", playtime_forever=0))
+        session.commit()
+        now = datetime.now(timezone.utc)
+        session.add(RecommendationDecision(game_id=1, decision="accepted_play", created_at=now - timedelta(days=5)))
+        session.add(RecommendationDecision(game_id=2, decision="accepted_play", created_at=now - timedelta(days=3)))
+        session.add(RecommendationDecision(game_id=3, decision="accepted_play", created_at=now - timedelta(hours=3)))
+        session.commit()
+
+    response = client.get("/session-outcomes/pending")
+    assert response.status_code == 200
+    pending = response.json()["pending"]
+    assert pending["game_id"] == 3
+    assert pending["game_name"] == "Game C"
+
+def test_post_session_outcome_happy_path(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(game_id=1, decision="accepted_play"))
+        session.commit()
+        decision_id = session.exec(select(RecommendationDecision)).first().id
+
+    response = client.post("/session-outcomes", json={"decision_id": decision_id, "fit": "great_fit"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["decision_id"] == decision_id
+    assert data["game_id"] == 1
+    assert data["fit"] == "great_fit"
+
+def test_post_session_outcome_unknown_decision_returns_404(client):
+    response = client.post("/session-outcomes", json={"decision_id": 999, "fit": "great_fit"})
+    assert response.status_code == 404
+
+def test_post_session_outcome_duplicate_returns_409(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(game_id=1, decision="accepted_play"))
+        session.commit()
+        decision_id = session.exec(select(RecommendationDecision)).first().id
+
+    first = client.post("/session-outcomes", json={"decision_id": decision_id, "fit": "partly"})
+    assert first.status_code == 200
+
+    second = client.post("/session-outcomes", json={"decision_id": decision_id, "fit": "not_a_fit"})
+    assert second.status_code == 409
+
+def test_post_session_outcome_invalid_fit_returns_422(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Game A", playtime_forever=0))
+        session.commit()
+        session.add(RecommendationDecision(game_id=1, decision="accepted_play"))
+        session.commit()
+        decision_id = session.exec(select(RecommendationDecision)).first().id
+
+    response = client.post("/session-outcomes", json={"decision_id": decision_id, "fit": "meh"})
+    assert response.status_code == 422
 
 def test_resume_empty_db_returns_null_candidate(client):
     response = client.get("/recommend/resume")

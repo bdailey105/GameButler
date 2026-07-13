@@ -17,7 +17,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library, load_external_library, EXTERNAL_VALID_PLATFORMS
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate, SessionOutcome, SessionOutcomeCreate
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -1282,6 +1282,79 @@ async def clear_recommendation_decisions(session: Session = Depends(get_session)
     session.commit()
     sync_recommender_with_db()
     return {"cleared": count}
+
+@app.get("/session-outcomes/pending")
+async def get_pending_session_outcome(session: Session = Depends(get_session)):
+    """Most recent 'accepted_play' decision old enough to reflect on, not yet
+    stale, and without a recorded outcome. Supplements decision feedback —
+    does not touch recommender scoring."""
+    now = utc_now()
+    window_start = as_naive_utc(now - timedelta(days=7))
+    window_end = as_naive_utc(now - timedelta(hours=2))
+
+    decisions = session.exec(
+        select(RecommendationDecision)
+        .where(
+            RecommendationDecision.decision == "accepted_play",
+            RecommendationDecision.created_at >= window_start,
+            RecommendationDecision.created_at <= window_end,
+        )
+        .order_by(RecommendationDecision.created_at.desc(), RecommendationDecision.id.desc())
+    ).all()
+
+    if not decisions:
+        return {"pending": None}
+
+    decision_ids = [decision.id for decision in decisions]
+    outcomes = session.exec(
+        select(SessionOutcome).where(col(SessionOutcome.decision_id).in_(decision_ids))
+    ).all()
+    decided_ids = {outcome.decision_id for outcome in outcomes}
+
+    for decision in decisions:
+        if decision.id in decided_ids:
+            continue
+        game = session.get(Game, decision.game_id)
+        if not game:
+            continue
+        decided_at = decision.created_at
+        decided_at_aware = decided_at if decided_at.tzinfo else decided_at.replace(tzinfo=timezone.utc)
+        return {
+            "pending": {
+                "decision_id": decision.id,
+                "game_id": decision.game_id,
+                "game_name": game.name,
+                "mood": decision.mood,
+                "decided_at": decided_at_aware.isoformat(),
+            }
+        }
+
+    return {"pending": None}
+
+@app.post("/session-outcomes", response_model=SessionOutcome)
+async def create_session_outcome(
+    payload: SessionOutcomeCreate,
+    session: Session = Depends(get_session),
+):
+    decision = session.get(RecommendationDecision, payload.decision_id)
+    if not decision:
+        raise HTTPException(status_code=404, detail="Decision not found")
+
+    existing = session.exec(
+        select(SessionOutcome).where(SessionOutcome.decision_id == payload.decision_id)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Session outcome already recorded for this decision")
+
+    outcome = SessionOutcome(
+        decision_id=payload.decision_id,
+        game_id=decision.game_id,
+        fit=payload.fit,
+    )
+    session.add(outcome)
+    session.commit()
+    session.refresh(outcome)
+    return outcome
 
 @app.get("/profiles", response_model=List[ContextProfile])
 async def list_profiles(session: Session = Depends(get_session)):

@@ -141,6 +141,28 @@ class RecommendationDecision(SQLModel, table=True):
     tags_snapshot: Optional[str] = None  # game's tags when decided — keeps affinity deterministic
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+# Allowed values for SessionOutcome.fit — "skipped" is a real, persisted answer
+# (the user declined to reflect), distinct from there being no outcome at all.
+SESSION_OUTCOME_FITS = {"great_fit", "partly", "not_a_fit", "skipped"}
+
+class SessionOutcome(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    decision_id: int = Field(foreign_key="recommendationdecision.id", unique=True, index=True)
+    game_id: int = Field(foreign_key="game.id", index=True)
+    fit: str  # great_fit | partly | not_a_fit | skipped
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class SessionOutcomeCreate(SQLModel):
+    decision_id: int
+    fit: str
+
+    @field_validator("fit")
+    @classmethod
+    def _check_fit(cls, value: str) -> str:
+        if value not in SESSION_OUTCOME_FITS:
+            raise ValueError(f"Invalid fit: {value!r}. Must be one of {sorted(SESSION_OUTCOME_FITS)}")
+        return value
+
 # Allowed values mirror the /recommend query params exactly — profiles are
 # explicit presets of those same parameters, not a separate vocabulary.
 CONTEXT_PROFILE_LENGTHS = {"short", "medium", "long"}
