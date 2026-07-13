@@ -2000,7 +2000,9 @@ function BacklogView({ onMove, onAttentionChange, onOpenDetail }) {
                         }
                       ] : []}
                       actions={[
-                        column.key !== 'up_next' && { label: 'Queue', status: 'up_next', className: 'primary' },
+                        column.key === 'playing'
+                          ? { label: 'Pause', status: 'paused', className: 'primary' }
+                          : column.key !== 'up_next' && { label: 'Queue', status: 'up_next', className: 'primary' },
                         column.key !== 'playing' && { label: 'Play', status: 'playing', className: 'success' },
                         column.key !== 'completed' && { label: 'Done', status: 'completed', className: 'secondary' }
                       ].filter(Boolean)}
