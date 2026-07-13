@@ -17,7 +17,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library, load_external_library, EXTERNAL_VALID_PLATFORMS
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate, SessionOutcome, SessionOutcomeCreate, ArchaeologyDismissal, ArchaeologyDismissalCreate
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate, SessionOutcome, SessionOutcomeCreate, ArchaeologyDismissal, ArchaeologyDismissalCreate, Rotation, RotationGame, RotationCreate, RotationUpdate, RotationGameAdd
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -50,6 +50,17 @@ def sync_recommender_with_db():
     with Session(engine) as session:
         statement = select(Game)
         results = session.exec(statement).all()
+
+        active_rotations = session.exec(select(Rotation).where(Rotation.active == True)).all()  # noqa: E712
+        rotation_names_by_id = {rotation.id: rotation.name for rotation in active_rotations}
+        rotations = {}
+        if rotation_names_by_id:
+            memberships = session.exec(
+                select(RotationGame).where(col(RotationGame.rotation_id).in_(rotation_names_by_id.keys()))
+            ).all()
+            for membership in memberships:
+                rotations.setdefault(membership.game_id, []).append(rotation_names_by_id[membership.rotation_id])
+
         if results:
             data = [game.model_dump() for game in results]
             df = pd.DataFrame(data)
@@ -82,10 +93,10 @@ def sync_recommender_with_db():
                     "created_at": decision.created_at,
                 })
 
-            recommender = GameRecommender(df, feedback=feedback)
+            recommender = GameRecommender(df, feedback=feedback, rotations=rotations)
             print(f"Recommender synced with DB. Total games: {len(df)}")
         else:
-            recommender = GameRecommender(pd.DataFrame())
+            recommender = GameRecommender(pd.DataFrame(), rotations=rotations)
             print("Recommender initialized with empty data (DB is empty).")
 
 def estimate_remaining(game) -> Optional[dict]:
@@ -1422,6 +1433,145 @@ async def delete_profile(profile_id: int, session: Session = Depends(get_session
 
     session.delete(profile)
     session.commit()
+    return {"ok": True}
+
+def _serialize_rotation(rotation: Rotation, game_ids: list) -> dict:
+    return {
+        "id": rotation.id,
+        "name": rotation.name,
+        "active": rotation.active,
+        "created_at": rotation.created_at,
+        "game_ids": sorted(game_ids),
+    }
+
+@app.get("/rotations")
+async def list_rotations(session: Session = Depends(get_session)):
+    rotations = session.exec(select(Rotation).order_by(Rotation.name)).all()
+    memberships = session.exec(select(RotationGame)).all()
+    game_ids_by_rotation: dict = {}
+    for membership in memberships:
+        game_ids_by_rotation.setdefault(membership.rotation_id, []).append(membership.game_id)
+    return [_serialize_rotation(rotation, game_ids_by_rotation.get(rotation.id, [])) for rotation in rotations]
+
+@app.post("/rotations")
+async def create_rotation(payload: RotationCreate, session: Session = Depends(get_session)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+
+    duplicate = session.exec(
+        select(Rotation).where(col(Rotation.name).ilike(name))
+    ).first()
+    if duplicate:
+        raise HTTPException(status_code=409, detail=f"Rotation '{name}' already exists")
+
+    rotation = Rotation(name=name)
+    session.add(rotation)
+    session.commit()
+    session.refresh(rotation)
+    sync_recommender_with_db()
+    return _serialize_rotation(rotation, [])
+
+@app.put("/rotations/{rotation_id}")
+async def update_rotation(
+    rotation_id: int,
+    payload: RotationUpdate,
+    session: Session = Depends(get_session),
+):
+    rotation = session.get(Rotation, rotation_id)
+    if not rotation:
+        raise HTTPException(status_code=404, detail="Rotation not found")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    new_name = update_data.get("name")
+    if new_name is not None:
+        new_name = new_name.strip()
+        duplicate = session.exec(
+            select(Rotation).where(
+                col(Rotation.name).ilike(new_name),
+                Rotation.id != rotation_id,
+            )
+        ).first()
+        if duplicate:
+            raise HTTPException(status_code=409, detail=f"Rotation '{new_name}' already exists")
+        update_data["name"] = new_name
+
+    for key, value in update_data.items():
+        setattr(rotation, key, value)
+
+    session.add(rotation)
+    session.commit()
+    session.refresh(rotation)
+    sync_recommender_with_db()
+
+    game_ids = session.exec(
+        select(RotationGame.game_id).where(RotationGame.rotation_id == rotation_id)
+    ).all()
+    return _serialize_rotation(rotation, game_ids)
+
+@app.delete("/rotations/{rotation_id}")
+async def delete_rotation(rotation_id: int, session: Session = Depends(get_session)):
+    rotation = session.get(Rotation, rotation_id)
+    if not rotation:
+        raise HTTPException(status_code=404, detail="Rotation not found")
+
+    memberships = session.exec(
+        select(RotationGame).where(RotationGame.rotation_id == rotation_id)
+    ).all()
+    for membership in memberships:
+        session.delete(membership)
+    session.delete(rotation)
+    session.commit()
+    sync_recommender_with_db()
+    return {"ok": True}
+
+@app.post("/rotations/{rotation_id}/games")
+async def add_rotation_game(
+    rotation_id: int,
+    payload: RotationGameAdd,
+    session: Session = Depends(get_session),
+):
+    rotation = session.get(Rotation, rotation_id)
+    if not rotation:
+        raise HTTPException(status_code=404, detail="Rotation not found")
+    game = session.get(Game, payload.game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    existing = session.exec(
+        select(RotationGame).where(
+            RotationGame.rotation_id == rotation_id,
+            RotationGame.game_id == payload.game_id,
+        )
+    ).first()
+    if not existing:
+        session.add(RotationGame(rotation_id=rotation_id, game_id=payload.game_id))
+        session.commit()
+
+    sync_recommender_with_db()
+    return {"ok": True}
+
+@app.delete("/rotations/{rotation_id}/games/{game_id}")
+async def remove_rotation_game(
+    rotation_id: int,
+    game_id: int,
+    session: Session = Depends(get_session),
+):
+    rotation = session.get(Rotation, rotation_id)
+    if not rotation:
+        raise HTTPException(status_code=404, detail="Rotation not found")
+
+    membership = session.exec(
+        select(RotationGame).where(
+            RotationGame.rotation_id == rotation_id,
+            RotationGame.game_id == game_id,
+        )
+    ).first()
+    if membership:
+        session.delete(membership)
+        session.commit()
+
+    sync_recommender_with_db()
     return {"ok": True}
 
 CONTINUATION_STATUS_PRIORITY = {

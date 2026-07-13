@@ -288,6 +288,27 @@ class ContextProfileCreate(SQLModel):
     def _validate_context(cls, value: Optional[str]) -> Optional[str]:
         return _check_profile_context(value)
 
+class Rotation(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RotationGame(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    rotation_id: int = Field(foreign_key="rotation.id", index=True)
+    game_id: int = Field(foreign_key="game.id", index=True)
+
+class RotationCreate(SQLModel):
+    name: str
+
+class RotationUpdate(SQLModel):
+    name: Optional[str] = None
+    active: Optional[bool] = None
+
+class RotationGameAdd(SQLModel):
+    game_id: int
+
 class ContextProfileUpdate(SQLModel):
     name: Optional[str] = None
     mood: Optional[str] = None

@@ -524,3 +524,45 @@ def test_less_like_this_penalizes_tag_sibling():
 
     assert by_name['Unrelated Game']['score'] == by_name['Tag Sibling']['score'] + 6
     assert by_name['Decided Game']['score'] == by_name['Unrelated Game']['score'] - 10
+
+def test_rotation_member_gets_score_and_reason():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Comfort Game"},
+        {"AppID": 2, "Name": "Other Game"},
+    ])
+    baseline_score = GameRecommender(df).recommend()['score']
+
+    recommender = GameRecommender(df, rotations={1: ["Comfort Games"]})
+    rows = recommender.recommend_many(2)
+    by_name = {row['Name']: row for row in rows}
+
+    assert "In rotation: Comfort Games" in by_name['Comfort Game']['reasons']
+    assert by_name['Comfort Game']['score'] == baseline_score + 15
+    assert "In rotation: Comfort Games" not in by_name['Other Game']['reasons']
+    assert by_name['Other Game']['score'] == baseline_score
+
+def test_rotation_empty_mapping_is_no_op():
+    df = _feedback_df([{"AppID": 1, "Name": "Solo Game"}])
+    baseline_score = GameRecommender(df).recommend()['score']
+    baseline_reasons = GameRecommender(df).recommend()['reasons']
+
+    recommender = GameRecommender(df, rotations={})
+    result = recommender.recommend()
+
+    assert result['score'] == baseline_score
+    assert result['reasons'] == baseline_reasons
+
+def test_rotation_member_of_two_rotations_gets_both_reasons():
+    df = _feedback_df([
+        {"AppID": 1, "Name": "Double Rotation Game"},
+        {"AppID": 2, "Name": "Other Game"},
+    ])
+    baseline_score = GameRecommender(df).recommend()['score']
+
+    recommender = GameRecommender(df, rotations={1: ["Comfort Games", "Halloween"]})
+    rows = recommender.recommend_many(2)
+    by_name = {row['Name']: row for row in rows}
+
+    assert "In rotation: Comfort Games" in by_name['Double Rotation Game']['reasons']
+    assert "In rotation: Halloween" in by_name['Double Rotation Game']['reasons']
+    assert by_name['Double Rotation Game']['score'] == baseline_score + 30

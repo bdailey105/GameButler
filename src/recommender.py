@@ -9,9 +9,10 @@ def _format_hours(minutes) -> str:
     return "<1h" if hours == 0 else f"{hours}h"
 
 class GameRecommender:
-    def __init__(self, df: pd.DataFrame, feedback: Optional[list] = None):
+    def __init__(self, df: pd.DataFrame, feedback: Optional[list] = None, rotations: Optional[dict] = None):
         self.df = df
         self.feedback = feedback or []
+        self.rotations = rotations or {}
 
     def recommend(self,
                   genre: Optional[str] = None,
@@ -209,6 +210,7 @@ class GameRecommender:
             )
 
         self.apply_feedback_score(scored, add_reason, add_score)
+        self.apply_rotation_score(scored, add_reason)
 
         empty_reasons = scored["_reasons"].apply(len) == 0
         for idx in scored.index[empty_reasons]:
@@ -415,6 +417,27 @@ class GameRecommender:
                     sibling_mask = scored["Tags"].astype(str).str.contains(tag, case=False, na=False) & ~mask_self
                     game_name = decision.get("game_name") or "that game"
                     add_reason(sibling_mask, 8, f"Feedback: more like {game_name}")
+
+    def apply_rotation_score(self, scored: pd.DataFrame, add_reason):
+        """Apply curated-rotation adjustments — visible, reversible signals set by the
+        owner (e.g. "Comfort Games", "Halloween"), not hidden preference learning.
+
+        `self.rotations` maps game_id (AppID) -> list of ACTIVE rotation names the
+        game currently belongs to (deactivated rotations and their memberships are
+        never included, so they have no effect). Each rotation membership adds
+        +15 with a dedicated reason "In rotation: {name}"; a game in two rotations
+        gets both the score and both reasons. No-op when the mapping is empty.
+        """
+        if not self.rotations or "AppID" not in scored.columns:
+            return
+
+        names = set()
+        for game_rotations in self.rotations.values():
+            names.update(game_rotations)
+
+        for name in sorted(names):
+            mask = scored["AppID"].map(lambda app_id: name in self.rotations.get(app_id, []))
+            add_reason(mask, 15, f"In rotation: {name}")
 
     def recommend_random(self) -> Optional[pd.Series]:
         """Returns a random game from the library."""

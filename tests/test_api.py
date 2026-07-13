@@ -4,7 +4,8 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, SessionOutcome, ArchaeologyDismissal
+from src.api import sync_recommender_with_db as real_sync_recommender_with_db
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, SessionOutcome, ArchaeologyDismissal, Rotation, RotationGame
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
@@ -2405,3 +2406,159 @@ def test_archaeology_caps_at_three_with_deterministic_order(client):
     digs = response.json()["digs"]
     assert len(digs) == 3
     assert [dig["id"] for dig in digs] == [3, 2, 4]
+
+# ---------------------------------------------------------------------------
+# E35 Curated Rotations
+# ---------------------------------------------------------------------------
+
+def test_rotation_crud_roundtrip(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Comfort Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/rotations", json={"name": "Comfort Games"})
+    assert response.status_code == 200
+    created = response.json()
+    assert created["name"] == "Comfort Games"
+    assert created["active"] is True
+    assert created["game_ids"] == []
+    rotation_id = created["id"]
+
+    add_response = client.post(f"/rotations/{rotation_id}/games", json={"game_id": 1})
+    assert add_response.status_code == 200
+    assert add_response.json() == {"ok": True}
+
+    list_response = client.get("/rotations")
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    names = [rotation["name"] for rotation in listed]
+    assert names == sorted(names)
+    rotation_entry = next(r for r in listed if r["id"] == rotation_id)
+    assert rotation_entry["game_ids"] == [1]
+
+    update_response = client.put(f"/rotations/{rotation_id}", json={"active": False})
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["active"] is False
+    assert updated["name"] == "Comfort Games"  # untouched fields survive partial update
+    assert updated["game_ids"] == [1]
+
+    delete_response = client.delete(f"/rotations/{rotation_id}")
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"ok": True}
+    assert client.get("/rotations").json() == []
+
+def test_rotation_create_rejects_duplicate_name_case_insensitive(client):
+    first = client.post("/rotations", json={"name": "Halloween"})
+    assert first.status_code == 200
+
+    duplicate = client.post("/rotations", json={"name": "halloween"})
+    assert duplicate.status_code == 409
+
+def test_rotation_update_rejects_rename_into_existing_name(client):
+    client.post("/rotations", json={"name": "Alpha"})
+    beta = client.post("/rotations", json={"name": "Beta"}).json()
+
+    response = client.put(f"/rotations/{beta['id']}", json={"name": "alpha"})
+    assert response.status_code == 409
+
+def test_rotation_update_unknown_id_returns_404(client):
+    response = client.put("/rotations/999", json={"active": False})
+    assert response.status_code == 404
+
+def test_rotation_delete_unknown_id_returns_404(client):
+    response = client.delete("/rotations/999")
+    assert response.status_code == 404
+
+def test_rotation_add_game_unknown_rotation_returns_404(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Some Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/rotations/999/games", json={"game_id": 1})
+    assert response.status_code == 404
+
+def test_rotation_add_unknown_game_returns_404(client):
+    rotation_id = client.post("/rotations", json={"name": "Before The Sequel"}).json()["id"]
+
+    response = client.post(f"/rotations/{rotation_id}/games", json={"game_id": 999})
+    assert response.status_code == 404
+
+def test_rotation_add_game_is_idempotent(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Some Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+    rotation_id = client.post("/rotations", json={"name": "Comfort Games"}).json()["id"]
+
+    first = client.post(f"/rotations/{rotation_id}/games", json={"game_id": 1})
+    second = client.post(f"/rotations/{rotation_id}/games", json={"game_id": 1})
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    with Session(engine) as session:
+        memberships = session.exec(
+            select(RotationGame).where(RotationGame.rotation_id == rotation_id, RotationGame.game_id == 1)
+        ).all()
+        assert len(memberships) == 1
+
+def test_rotation_remove_game_unknown_rotation_returns_404(client):
+    response = client.delete("/rotations/999/games/1")
+    assert response.status_code == 404
+
+def test_rotation_remove_game_is_idempotent_for_non_member(client):
+    rotation_id = client.post("/rotations", json={"name": "Comfort Games"}).json()["id"]
+
+    first = client.delete(f"/rotations/{rotation_id}/games/1")
+    second = client.delete(f"/rotations/{rotation_id}/games/1")
+    assert first.status_code == 200
+    assert first.json() == {"ok": True}
+    assert second.status_code == 200
+    assert second.json() == {"ok": True}
+
+def test_rotation_delete_cascades_memberships(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Some Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+    rotation_id = client.post("/rotations", json={"name": "Comfort Games"}).json()["id"]
+    client.post(f"/rotations/{rotation_id}/games", json={"game_id": 1})
+
+    delete_response = client.delete(f"/rotations/{rotation_id}")
+    assert delete_response.status_code == 200
+
+    with Session(engine) as session:
+        remaining = session.exec(
+            select(RotationGame).where(RotationGame.rotation_id == rotation_id)
+        ).all()
+        assert remaining == []
+        assert session.get(Rotation, rotation_id) is None
+
+def test_rotation_end_to_end_influences_recommend_and_deactivation_removes_it(client):
+    with Session(engine) as session:
+        session.add(Game(
+            id=1, name="Halloween Game", playtime_forever=0, genre="Horror",
+            tags="Halloween", status=GameStatus.LIBRARY,
+        ))
+        session.commit()
+
+    rotation_id = client.post("/rotations", json={"name": "Halloween"}).json()["id"]
+    client.post(f"/rotations/{rotation_id}/games", json={"game_id": 1})
+
+    # mock_lifespan patches sync_recommender_with_db as a no-op for the endpoints
+    # above; run the real sync (captured before that patch applied) so the global
+    # recommender actually reflects the rotation membership just created.
+    real_sync_recommender_with_db()
+
+    response = client.get("/recommend")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["AppID"] == 1
+    assert "In rotation: Halloween" in data["reasons"]
+
+    deactivate_response = client.put(f"/rotations/{rotation_id}", json={"active": False})
+    assert deactivate_response.status_code == 200
+    real_sync_recommender_with_db()
+
+    response = client.get("/recommend")
+    assert response.status_code == 200
+    data = response.json()
+    assert not any(reason.startswith("In rotation:") for reason in data["reasons"])
