@@ -4,12 +4,12 @@ from sqlmodel.pool import StaticPool
 from src.api import app, get_session
 from src.api import process_enrichment, enrichment_candidates_query, run_scheduled_enrichment
 from src.api import run_steam_sync, steam_sync_interval_seconds
-from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, SessionOutcome
+from src.models import Game, GameStatus, AttentionLevel, EnrichmentJob, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, SessionOutcome, ArchaeologyDismissal
 from src.recommender import GameRecommender
 import pytest
 import pandas as pd
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from unittest.mock import AsyncMock, patch
 
 # Test Database - In Memory with StaticPool to share connection across threads
@@ -2228,3 +2228,180 @@ def test_recommend_explicit_query_param_overrides_profile(client):
     data = response.json()
     assert data["Name"] == "RPG Game"
     assert "Profile: Action Fan" in data["reasons"]
+
+# ---------------------------------------------------------------------------
+# E34 Backlog Archaeology
+# ---------------------------------------------------------------------------
+
+def test_archaeology_empty_pool_returns_no_digs(client):
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    assert response.json() == {"digs": []}
+
+def test_archaeology_excludes_non_library_status(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Backlog Game", playtime_forever=100, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Playing Game", playtime_forever=100, status=GameStatus.PLAYING))
+        session.add(Game(id=3, name="Paused Game", playtime_forever=100, status=GameStatus.PAUSED))
+        session.add(Game(id=4, name="Up Next Game", playtime_forever=100, status=GameStatus.UP_NEXT))
+        session.add(Game(id=5, name="Completed Game", playtime_forever=100, status=GameStatus.COMPLETED))
+        session.add(Game(id=6, name="Abandoned Game", playtime_forever=100, status=GameStatus.ABANDONED))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = response.json()["digs"]
+    assert len(digs) == 1
+    assert digs[0]["id"] == 1
+
+def test_archaeology_excludes_game_with_recent_play_event(client):
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Recently Active", playtime_forever=100, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="Truly Neglected", playtime_forever=100, status=GameStatus.LIBRARY))
+        session.add(PlayEvent(game_id=1, event_type="playtime", created_at=now - timedelta(days=10)))
+        session.add(PlayEvent(game_id=2, event_type="playtime", created_at=now - timedelta(days=120)))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = response.json()["digs"]
+    assert len(digs) == 1
+    assert digs[0]["id"] == 2
+
+def test_archaeology_never_played_reason_wording(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Untouched Game", playtime_forever=0, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = response.json()["digs"]
+    assert len(digs) == 1
+    assert digs[0]["reasons"] == ["Never played"]
+
+def test_archaeology_played_but_neglected_reason_wording(client):
+    now = datetime.now(timezone.utc)
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Stale Game", playtime_forever=120, status=GameStatus.LIBRARY))
+        session.add(Game(id=2, name="No History Game", playtime_forever=180, status=GameStatus.LIBRARY))
+        session.add(PlayEvent(game_id=1, event_type="playtime", created_at=now - timedelta(days=120)))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = {dig["id"]: dig for dig in response.json()["digs"]}
+    assert digs[1]["reasons"][0] == "2h played, but no recorded activity in over 90 days"
+    assert digs[2]["reasons"][0] == "3h played, but no recorded activity"
+
+def test_archaeology_similarity_reason_present_with_shared_tag_absent_without(client):
+    today = date.today()
+    with Session(engine) as session:
+        session.add(Game(
+            id=1, name="Reference Game", playtime_forever=500, status=GameStatus.COMPLETED,
+            tags="Roguelike;Indie", completed_on=today - timedelta(days=10),
+        ))
+        session.add(Game(
+            id=2, name="Shared Tag Game", playtime_forever=50, status=GameStatus.LIBRARY,
+            tags="Roguelike;Action",
+        ))
+        session.add(Game(
+            id=3, name="Unrelated Game", playtime_forever=50, status=GameStatus.LIBRARY,
+            tags="Puzzle",
+        ))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = {dig["id"]: dig for dig in response.json()["digs"]}
+    assert "Shares Roguelike with Reference Game" in digs[2]["reasons"]
+    assert not any(reason.startswith("Shares ") for reason in digs[3]["reasons"])
+
+def test_archaeology_dismissed_game_never_resurfaces(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Dismiss Me", playtime_forever=50, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/archaeology/1/dismiss", json={"action": "dismissed"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "action": "dismissed"}
+
+    response = client.get("/archaeology")
+    assert response.json()["digs"] == []
+
+def test_archaeology_deferred_hidden_then_resurfaces_after_30_days(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Defer Me", playtime_forever=50, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/archaeology/1/dismiss", json={"action": "deferred"})
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "action": "deferred"}
+
+    response = client.get("/archaeology")
+    assert response.json()["digs"] == []
+
+    with Session(engine) as session:
+        dismissal = session.exec(select(ArchaeologyDismissal).where(ArchaeologyDismissal.game_id == 1)).first()
+        dismissal.created_at = datetime.now(timezone.utc) - timedelta(days=31)
+        session.add(dismissal)
+        session.commit()
+
+    response = client.get("/archaeology")
+    digs = response.json()["digs"]
+    assert len(digs) == 1
+    assert digs[0]["id"] == 1
+
+def test_archaeology_dismiss_overrides_defer_via_upsert(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Flip Flop Game", playtime_forever=50, status=GameStatus.LIBRARY))
+        session.commit()
+
+    assert client.post("/archaeology/1/dismiss", json={"action": "deferred"}).status_code == 200
+    assert client.post("/archaeology/1/dismiss", json={"action": "dismissed"}).status_code == 200
+
+    with Session(engine) as session:
+        rows = session.exec(select(ArchaeologyDismissal).where(ArchaeologyDismissal.game_id == 1)).all()
+        assert len(rows) == 1
+        assert rows[0].action == "dismissed"
+
+    # Even after the 30-day defer window would have expired, dismissal still wins.
+    with Session(engine) as session:
+        dismissal = session.exec(select(ArchaeologyDismissal).where(ArchaeologyDismissal.game_id == 1)).first()
+        dismissal.created_at = datetime.now(timezone.utc) - timedelta(days=60)
+        session.add(dismissal)
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.json()["digs"] == []
+
+def test_archaeology_dismiss_unknown_game_returns_404(client):
+    response = client.post("/archaeology/9999/dismiss", json={"action": "dismissed"})
+    assert response.status_code == 404
+
+def test_archaeology_dismiss_invalid_action_returns_422(client):
+    with Session(engine) as session:
+        session.add(Game(id=1, name="Bad Action Game", playtime_forever=50, status=GameStatus.LIBRARY))
+        session.commit()
+
+    response = client.post("/archaeology/1/dismiss", json={"action": "ignored"})
+    assert response.status_code == 422
+
+def test_archaeology_caps_at_three_with_deterministic_order(client):
+    today = date.today()
+    with Session(engine) as session:
+        session.add(Game(
+            id=1, name="Reference Game", playtime_forever=500, status=GameStatus.COMPLETED,
+            tags="SharedTag", completed_on=today - timedelta(days=10),
+        ))
+        session.add(Game(id=2, name="Alpha", playtime_forever=50, status=GameStatus.LIBRARY, tags="SharedTag;Other"))
+        session.add(Game(id=3, name="Bravo", playtime_forever=200, status=GameStatus.LIBRARY, tags="SharedTag"))
+        session.add(Game(id=4, name="Charlie", playtime_forever=500, status=GameStatus.LIBRARY, tags="Unrelated"))
+        session.add(Game(id=5, name="Delta", playtime_forever=10, status=GameStatus.LIBRARY, tags="Unrelated2"))
+        session.commit()
+
+    response = client.get("/archaeology")
+    assert response.status_code == 200
+    digs = response.json()["digs"]
+    assert len(digs) == 3
+    assert [dig["id"] for dig in digs] == [3, 2, 4]

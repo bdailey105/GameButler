@@ -17,7 +17,7 @@ from sqlalchemy import case
 from src.data_loader import load_steam_library, load_external_library, EXTERNAL_VALID_PLATFORMS
 from src.recommender import GameRecommender, _format_hours
 from src.database import init_db, engine, get_session
-from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate, SessionOutcome, SessionOutcomeCreate
+from src.models import Game, GameStatus, AttentionLevel, GameUpdate, EnrichmentJob, QueueReorder, BulkGameUpdate, PlayEvent, SyncRun, JournalEntry, RecommendationDecision, ContextProfile, ContextProfileCreate, ContextProfileUpdate, SessionOutcome, SessionOutcomeCreate, ArchaeologyDismissal, ArchaeologyDismissalCreate
 from src.logic import apply_attention_heuristics
 from src.steam_client import fetch_game_details, fetch_owned_games
 from src.steamspy_client import fetch_user_tags
@@ -33,6 +33,16 @@ def utc_now():
 def as_naive_utc(dt: datetime) -> datetime:
     """Datetimes round-trip through SQLite as naive UTC; normalize aware values too."""
     return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+def as_aware_utc(dt: datetime) -> datetime:
+    """Inverse of as_naive_utc — SQLite hands back naive datetimes; treat them as UTC."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+def _split_tags(value: Optional[str]) -> List[str]:
+    """Tags are stored as a comma/semicolon-delimited string; split and drop blanks."""
+    if not value:
+        return []
+    return [entry.strip() for entry in re.split(r"[,;]", value) if entry.strip()]
 
 def sync_recommender_with_db():
     """Load data from database into the global recommender instance."""
@@ -1624,6 +1634,125 @@ async def recommend_resume(session: Session = Depends(get_session)):
     result["launch_url"] = f"steam://rungameid/{game.id}" if game.platform == "steam" else None
 
     return {"candidate": result}
+
+ARCHAEOLOGY_NEGLECT_DAYS = 90
+ARCHAEOLOGY_DEFER_DAYS = 30
+ARCHAEOLOGY_RECENTLY_ENJOYED_DAYS = 60
+
+@app.get("/archaeology")
+async def archaeology_digs(session: Session = Depends(get_session)):
+    pool = session.exec(select(Game).where(Game.status == GameStatus.LIBRARY)).all()
+    if not pool:
+        return {"digs": []}
+
+    pool_ids = [game.id for game in pool]
+    events = session.exec(
+        select(PlayEvent)
+        .where(col(PlayEvent.game_id).in_(pool_ids))
+        .order_by(PlayEvent.created_at.desc())
+    ).all()
+    last_activity = {}
+    for event in events:
+        last_activity.setdefault(event.game_id, event.created_at)
+
+    dismissals = session.exec(
+        select(ArchaeologyDismissal).where(col(ArchaeologyDismissal.game_id).in_(pool_ids))
+    ).all()
+    dismissal_by_game = {d.game_id: d for d in dismissals}
+
+    now = utc_now()
+    neglect_cutoff = now - timedelta(days=ARCHAEOLOGY_NEGLECT_DAYS)
+    defer_cutoff = now - timedelta(days=ARCHAEOLOGY_DEFER_DAYS)
+    enjoyed_cutoff_date = (now - timedelta(days=ARCHAEOLOGY_RECENTLY_ENJOYED_DAYS)).date()
+
+    # "Recently enjoyed" reference set spans the whole library, not just the backlog pool.
+    all_games = session.exec(select(Game)).all()
+    recently_enjoyed = sorted(
+        (
+            g for g in all_games
+            if (g.completed_on is not None and g.completed_on >= enjoyed_cutoff_date)
+            or (g.personal_rating is not None and g.personal_rating >= 4)
+        ),
+        key=lambda g: g.id,
+    )
+
+    candidates = []
+    for game in pool:
+        dismissal = dismissal_by_game.get(game.id)
+        if dismissal is not None:
+            if dismissal.action == "dismissed":
+                continue
+            if dismissal.action == "deferred" and as_aware_utc(dismissal.created_at) >= defer_cutoff:
+                continue
+
+        last_active = last_activity.get(game.id)
+        if last_active is not None and as_aware_utc(last_active) >= neglect_cutoff:
+            continue
+
+        if game.playtime_forever == 0:
+            reasons = ["Never played"]
+        else:
+            hours = _format_hours(game.playtime_forever)
+            if last_active is None:
+                reasons = [f"{hours} played, but no recorded activity"]
+            else:
+                reasons = [f"{hours} played, but no recorded activity in over 90 days"]
+
+        game_tags = _split_tags(game.tags)
+        if game_tags:
+            for other in recently_enjoyed:
+                if other.id == game.id:
+                    continue
+                shared = [t for t in game_tags if t in _split_tags(other.tags)]
+                if shared:
+                    reasons.append(f"Shares {shared[0]} with {other.name}")
+                    break
+
+        candidates.append({
+            "game": game,
+            "reasons": reasons,
+            "has_similarity": len(reasons) > 1,
+        })
+
+    def rank_key(item):
+        return (
+            0 if item["has_similarity"] else 1,
+            -item["game"].playtime_forever,
+            item["game"].name.lower(),
+        )
+
+    ranked = sorted(candidates, key=rank_key)[:3]
+
+    digs = []
+    for item in ranked:
+        result = item["game"].model_dump()
+        result["reasons"] = item["reasons"]
+        digs.append(result)
+
+    return {"digs": digs}
+
+@app.post("/archaeology/{game_id}/dismiss")
+async def dismiss_archaeology_dig(
+    game_id: int,
+    payload: ArchaeologyDismissalCreate,
+    session: Session = Depends(get_session),
+):
+    game = session.get(Game, game_id)
+    if not game:
+        raise HTTPException(status_code=404, detail="Game not found")
+
+    existing = session.exec(
+        select(ArchaeologyDismissal).where(ArchaeologyDismissal.game_id == game_id)
+    ).first()
+    if existing:
+        existing.action = payload.action
+        existing.created_at = utc_now()
+        session.add(existing)
+    else:
+        session.add(ArchaeologyDismissal(game_id=game_id, action=payload.action))
+    session.commit()
+
+    return {"ok": True, "action": payload.action}
 
 @app.get("/recommend", response_model=RecommendationResponse)
 async def recommend_game(

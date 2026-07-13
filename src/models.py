@@ -163,6 +163,26 @@ class SessionOutcomeCreate(SQLModel):
             raise ValueError(f"Invalid fit: {value!r}. Must be one of {sorted(SESSION_OUTCOME_FITS)}")
         return value
 
+# Allowed values for ArchaeologyDismissal.action — "dismissed" is forever, "deferred"
+# hides the dig for a rolling window (see /archaeology neglect-window logic in api.py).
+ARCHAEOLOGY_DISMISSAL_ACTIONS = {"dismissed", "deferred"}
+
+class ArchaeologyDismissal(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    game_id: int = Field(foreign_key="game.id", unique=True, index=True)
+    action: str  # dismissed | deferred
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ArchaeologyDismissalCreate(SQLModel):
+    action: str
+
+    @field_validator("action")
+    @classmethod
+    def _check_action(cls, value: str) -> str:
+        if value not in ARCHAEOLOGY_DISMISSAL_ACTIONS:
+            raise ValueError(f"Invalid action: {value!r}. Must be one of {sorted(ARCHAEOLOGY_DISMISSAL_ACTIONS)}")
+        return value
+
 # Allowed values mirror the /recommend query params exactly — profiles are
 # explicit presets of those same parameters, not a separate vocabulary.
 CONTEXT_PROFILE_LENGTHS = {"short", "medium", "long"}
