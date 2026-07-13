@@ -908,7 +908,7 @@ Git commits `6a4f5b1` through `a284f1b` implement E25–E30 and include correspo
 
 ## E31 — Resume Me
 
-**Status:** In progress
+**Status:** Done (2026-07-13: GET /recommend/resume + dashboard Resume card; 184 backend tests, lint+build clean)
 
 **Goal:** Put the best continuation decision on the home surface so resuming a game takes less effort than browsing the library.
 
@@ -916,21 +916,21 @@ Git commits `6a4f5b1` through `a284f1b` implement E25–E30 and include correspo
 
 **Acceptance Criteria**
 
-- [ ] Backend ranks paused/playing/Up Next games using existing return notes, recent activity, queue position, and qualified remaining-time data.
-- [ ] The response includes explicit reasons and never invents progress or context when data is missing.
-- [ ] Tests cover tie-breaking, missing notes, excluded statuses, and approximate estimates.
+- [x] Backend ranks paused/playing/Up Next games using existing return notes, recent activity, queue position, and qualified remaining-time data.
+- [x] The response includes explicit reasons and never invents progress or context when data is missing.
+- [x] Tests cover tie-breaking, missing notes, excluded statuses, and approximate estimates.
 
 ### Story E31-S2 — Render a launchable resume card
 
 **Acceptance Criteria**
 
-- [ ] Dashboard renders one clear continuation card with return note, next milestone, estimate caveat, and available launcher link.
-- [ ] Missing Steam/launcher identity disables launch gracefully without hiding the game context.
-- [ ] Mobile and desktop states remain aligned to the Launcher design system.
+- [x] Dashboard renders one clear continuation card with return note, next milestone, estimate caveat, and available launcher link.
+- [x] Missing Steam/launcher identity disables launch gracefully without hiding the game context.
+- [x] Mobile and desktop states remain aligned to the Launcher design system.
 
 ## E32 — Gaming Context Profiles
 
-**Status:** Backlog
+**Status:** In progress
 
 Persist reusable, user-controlled profiles such as desk/controller, TV, Steam Deck, co-op, low-energy, or 30-minute sessions. Profiles apply explainable filtering/bonuses; they do not infer hardware or preferences silently.
 
